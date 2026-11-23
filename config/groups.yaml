@@ -1,0 +1,23 @@
+# 그룹 키 = IdolSentiments 의 config/groups/<키>.yaml 파일 이름
+# goods_gallery = Goods 가 크롤링하는 아이돌 갤러리 id (Goods collectors/registry.py 의 IDOL_GALLERIES)
+#   비어 있으면 '이 그룹 갤러리에서 굿즈 종류 언급 수' 특징을 쓸 수 없다 (학습 평균으로 채움)
+# aliases = 명령줄에서 그룹을 부를 때 쓰는 이름
+groups:
+  bts:
+    goods_gallery: bts
+    aliases: [방탄소년단, 방탄, BTS]
+  newjeans:
+    goods_gallery: newjeans
+    aliases: [뉴진스, NewJeans]
+  illit:
+    goods_gallery: illit
+    aliases: [아일릿, ILLIT]
+  ive:
+    goods_gallery: null          # Goods 에 아이브 갤러리 없음 (IdolSentiments 는 미니 갤러리 ive_victory 사용)
+    aliases: [아이브, IVE]
+  girlsgeneration:
+    goods_gallery: null
+    aliases: [소녀시대, SNSD, "Girls' Generation"]
+  리센느:
+    goods_gallery: null
+    aliases: [리센느, RESCENE]

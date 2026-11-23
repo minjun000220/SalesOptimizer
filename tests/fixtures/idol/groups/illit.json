@@ -1,0 +1,8 @@
+{"key": "illit", "name": "아일릿", "aliases": ["아일릿", "ILLIT"], "updated_at": "2026-11-23T00:53:38Z",
+ "days": 90, "sentiment_model": "anchor", "counts": {"docs": 100, "sentences": 120, "mentions": 110},
+ "group": {"favor": 58.1, "interest": 75.27, "controversy": 0.21, "net": 0.55, "mentions_per_day": 607.61},
+ "members": [{"name": "원희", "favor": 70.0, "interest": 100.0, "controversy": 0.1, "mention_share": 0.6, "n": 60},
+             {"name": "민주", "favor": 60.0, "interest": 66.0, "controversy": 0.2, "mention_share": 0.4, "n": 40}],
+ "history": [{"date": "2026-11-14", "favor": 55.0, "interest": 74.0, "mentions_per_day": 590.0, "members": {"원희": 68.0, "민주": 58.0}},
+             {"date": "2026-11-16", "favor": 56.0, "interest": 75.0, "mentions_per_day": 600.0, "members": {"원희": 69.0, "민주": 59.0}},
+             {"date": "2026-11-23", "favor": 58.1, "interest": 75.27, "mentions_per_day": 607.61, "members": {"원희": 70.0, "민주": 60.0}}]}
