@@ -51,12 +51,28 @@ python -m salesopt demo --n 300                    # 가짜 데이터로 전체 
 python -m salesopt backtest --n-train 50,300,2000  # 정말 안전한지 검증 (정답을 아는 시뮬레이션)
 python -m salesopt template --out sales.csv        # 실제 판매 기록 양식
 python -m salesopt ingest-idol                     # IdolSentiments 결과를 DB 에 저장 (매일)
-python -m salesopt recommend --group 아일릿 --sales sales.csv --types 키링,인형
+python -m salesopt recommend --group 아일릿 --sales sales.csv --types 키링,인형 \
+    --cost 키링=4000,인형=11000 --fixed-cost 300000 --moq 50 --price 키링=9000~16000
 python -m salesopt recommend --group 아일릿 --sales sales.csv           # 종류를 비우면 Goods 점수로 후보 선정
 ```
 
-주요 옵션: `--alpha 0.1` (완판 확률 90%), `--model lognormal|cvae`, `--min-elasticity 0.8`, `--censored strict|impute`, `--calib-frac 0.3`.
-비용과 가격 범위는 `config/costs.yaml`, 그룹과 Goods 갤러리 연결은 `config/groups.yaml`.
+### 비용·가격 입력
+한 값은 모든 굿즈 종류에 적용되고, `종류=값` 은 그 종류에만 적용됩니다. 쉼표로 여러 개를 섞을 수 있습니다 (`--cost 5000,인형=11000`).
+
+| 옵션 | 뜻 | 기본값 |
+|---|---|---|
+| `--cost` | 개당 제작 원가 | 없음. 빠진 종류는 터미널에서 물어봄 |
+| `--salvage` | 못 판 재고 개당 처분가 | 0 |
+| `--fixed-cost` | 1회 생산 고정비 (디자인·금형 등) | 0 |
+| `--moq` | 최소 생산 수량. 안전 수량이 이보다 적으면 "만들지 않음" | 1 |
+| `--max-qty` | 생산 가능 최대 수량 | 제한 없음 |
+| `--price` | 검토할 판매가 `하한~상한`. 값을 하나만 주면 그 가격으로 고정 | 판매 기록의 가격 범위 |
+| `--price-step` | 가격 격자 간격 | 500원 |
+
+천 단위 쉼표 대신 `4000`, `4_000`, `4000원` 처럼 씁니다. 쉼표는 종류 구분에 쓰기 때문입니다.
+
+그 밖의 옵션: `--alpha 0.1` (완판 확률 90%), `--model lognormal|cvae`, `--min-elasticity 0.8`, `--censored strict|impute`, `--calib-frac 0.3`.
+그룹과 Goods 갤러리의 연결은 `config/groups.yaml` 에 있습니다.
 
 ## 매일 자동 저장 (GitHub Actions)
 
@@ -106,6 +122,7 @@ lognormal 모델, 시드 3개 평균, 상황 80개. `profit` = 참 분포를 아
 ```
 salesopt/
   optimize.py       확률 제약 newsvendor (논문 Algorithm 1·2 변형), 비용·MOQ
+  inputs.py         명령줄 비용·가격 입력 (전체 / 종류별)
   conformal.py      분위수 수준 conformal 보정 (중도절단 strict / impute)
   models/           lognormal(중도절단 Tobit, 교차검증 릿지, 탄력성 ≥ 하한), cvae(PyTorch), 앙상블
   simulate.py       정답을 아는 가짜 판매 데이터 (숨은 수요 충격·내생성 옵션)

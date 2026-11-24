@@ -15,11 +15,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
-
 from salesopt.conformal import LEVEL_GRID, LevelConformal, min_records
 from salesopt.models import fit_predictor
-from salesopt.optimize import CostSpec, recommend
+from salesopt.inputs import CostInputs, add_cost_args
+from salesopt.optimize import recommend
 from salesopt.simulate import GOODS_TYPES, NUMERIC_FEATURES, Simulator, default_cost
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -69,9 +68,12 @@ def cmd_demo(a) -> None:
     base.update(favor=72, interest=85, controversy=0.15, log_mentions_per_day=6.5, favor_change_7d=2.0,
                 member_hhi=0.3, hot_index=70, buzz_z=1.0, sold_out_ratio=0.4, group_type_buzz_7d=20)
     from salesopt.backtest import price_grid
+    costs = CostInputs.from_args(a, interactive=False)
     for gt in (a.types.split(",") if a.types else GOODS_TYPES):
         ctx = pd.DataFrame([base | {"goods_type": gt}])
-        rec = recommend(pred, ctx, price_grid(gt), default_cost(gt), alpha=a.alpha, m=a.samples, seed=a.seed)
+        cost = costs.spec(gt) if costs.cost.get(gt) is not None else default_cost(gt)   # 입력 없으면 가짜 비용
+        grid = costs.grid(gt, None)[0] if costs.price.get(gt) is not None else price_grid(gt)
+        rec = recommend(pred, ctx, grid, cost, alpha=a.alpha, m=a.samples, seed=a.seed)
         print_recommendation(f"[가짜 그룹] {gt}", rec, show_table=not a.brief)
         if rec.best:
             p, q = rec.best["price"], rec.best["safe_qty"]
@@ -109,33 +111,6 @@ def cmd_ingest_idol(a) -> None:
         print(ingest(s, a.source or DEFAULT_SOURCE))
 
 
-def load_costs(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
-def _cost_and_grid(costs: dict, goods_type: str, support) -> tuple[CostSpec, np.ndarray, list[str]]:
-    c = (costs.get("goods") or {}).get(goods_type) or {}
-    d = costs.get("default") or {}
-    get = lambda k, v=None: c.get(k, d.get(k, v))                                  # noqa: E731
-    if get("unit_cost") is None:
-        raise SystemExit(f"costs 파일에 '{goods_type}' 의 unit_cost(개당 원가)가 없습니다")
-    cost = CostSpec(unit_cost=float(get("unit_cost")), salvage=float(get("salvage", 0)),
-                    fixed_cost=float(get("fixed_cost", 0)), moq=int(get("moq", 1)), max_qty=get("max_qty"))
-    notes = []
-    lo, hi = get("price_min"), get("price_max")
-    if support:
-        if lo is None or hi is None:
-            lo, hi = lo or support[0], hi or support[1]
-        if lo < support[0] or hi > support[1]:
-            notes.append(f"가격 범위 {lo:,.0f}~{hi:,.0f}원 중 학습 데이터 범위({support[0]:,.0f}~{support[1]:,.0f}원) "
-                         "밖은 외삽이라 덜 믿을 만합니다")
-    if lo is None or hi is None:
-        raise SystemExit(f"'{goods_type}' 가격 범위(price_min, price_max)를 costs 파일에 넣어주세요")
-    step = float(get("price_step", 500))
-    grid = np.arange(np.ceil(lo / step) * step, hi + 1e-9, step)
-    return cost, grid, notes
-
-
 def cmd_recommend(a) -> None:
     from salesopt.features import (build_context, build_training_frame, feature_coverage, load_group_map,
                                    resolve_group, select_candidates)
@@ -144,7 +119,7 @@ def cmd_recommend(a) -> None:
 
     init_db()
     gmap = load_group_map()
-    costs = load_costs(Path(a.costs))
+    costs = CostInputs.from_args(a)
     before = date.fromisoformat(a.as_of) + timedelta(days=1) if a.as_of else date.today() + timedelta(days=1)
     with session_scope() as s:
         gkey = resolve_group(a.group, gmap, s)
@@ -179,13 +154,17 @@ def cmd_recommend(a) -> None:
         if not types:
             raise SystemExit("후보 굿즈 종류가 없습니다 (--types 로 지정하거나 Goods 점수 계산을 확인하세요)")
         known = set(pred.encoder.categories_)
+        stray = sorted(costs.all_types() - set(types))
+        if stray:
+            print(f"  참고: 입력한 종류 중 이번에 추천하지 않는 종류: {', '.join(stray)}")
         summary = []
         for gt in types:
             if gt not in known:
                 print(f"\n=== {gt} === 판매 기록에 없는 굿즈 종류라 추천할 수 없습니다")
                 continue
             ctx = build_context(s, group, gt, before)
-            cost, grid, notes = _cost_and_grid(costs, gt, pred.price_range(gt))
+            cost = costs.spec(gt)
+            grid, notes = costs.grid(gt, pred.price_range(gt))
             rec = recommend(pred, ctx, grid, cost, alpha=a.alpha, m=a.samples, conformal=conf, seed=a.seed)
             rec.notes = notes + rec.notes
             print_recommendation(f"{group.key} · {gt}", rec, show_table=not a.brief)
@@ -220,6 +199,7 @@ def main(argv=None) -> None:
     d.add_argument("--types", default="")
     d.add_argument("--samples", type=int, default=4000)
     d.add_argument("--brief", action="store_true")
+    add_cost_args(d, required_cost=False)
 
     b = sub.add_parser("backtest"); common(b)
     b.add_argument("--n-train", default="50,300,2000")
@@ -236,7 +216,6 @@ def main(argv=None) -> None:
     r = sub.add_parser("recommend"); common(r)
     r.add_argument("--group", required=True)
     r.add_argument("--sales", required=True, help="실제 판매 기록 CSV (python -m salesopt template 참고)")
-    r.add_argument("--costs", default=str(ROOT / "config" / "costs.yaml"))
     r.add_argument("--types", default="", help="굿즈 종류 (쉼표). 비우면 Goods 점수로 후보 선정")
     r.add_argument("--top", type=int, default=5)
     r.add_argument("--as-of", default="", help="기준일 (기본 오늘)")
@@ -245,6 +224,7 @@ def main(argv=None) -> None:
     r.add_argument("--min-coverage", type=float, default=0.5, help="값이 이 비율 미만인 특징은 제외")
     r.add_argument("--samples", type=int, default=4000)
     r.add_argument("--brief", action="store_true")
+    add_cost_args(r, required_cost=False)    # 원가가 없으면 터미널에서 종류별로 물어본다
 
     a = p.parse_args(argv)
     {"demo": cmd_demo, "backtest": cmd_backtest, "template": cmd_template, "ingest-idol": cmd_ingest_idol,
