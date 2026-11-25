@@ -357,7 +357,8 @@ def publish_contexts(session: Session, group_map, goods_types, today: date | Non
             if gt in prices.index:                    # Goods 가 모은 이 종류의 판매가 분포
                 pr = prices.loc[gt]
                 feats |= {"_price_ref": round(float(pr.ref)), "_price_lo": round(float(pr.lo)),
-                          "_price_hi": round(float(pr.hi)), "_price_n": int(pr.n)}
+                          "_price_hi": round(float(pr.hi)), "_price_n": int(pr.n),
+                          "_price_source": pr.source}
             session.add(PublishedContext(group_key=k, group_name=names.get(k, k), aliases=aliases, goods_type=gt,
                                          as_of=before - timedelta(days=1), features=feats))
             n += 1

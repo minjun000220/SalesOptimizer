@@ -120,3 +120,37 @@ def test_database_url_normalized(monkeypatch):
     assert normalize_url("postgresql+psycopg://x") == "postgresql+psycopg://x"
     monkeypatch.setenv("DATABASE_URL", "")
     assert database_url().startswith("sqlite:///")
+
+
+def _add_prices(session, gtype, seller, prices, start_id):
+    for i, pr in enumerate(prices):
+        lid = start_id + i
+        session.execute(text("INSERT INTO listing (id, source_id, external_id, goods_type, title_raw, url, seller_type) "
+                             "VALUES (:i, 's', :e, :g, 't', 'u', :sl)"), {"i": lid, "e": f"{gtype}{lid}", "g": gtype, "sl": seller})
+        session.execute(text("INSERT INTO listing_snapshot (listing_id, observed_at, price) VALUES (:i, :t, :p)"),
+                        {"i": lid, "t": datetime(2026, 11, 20), "p": pr})
+
+
+def test_price_stats_resale_fallback(session):
+    from salesopt.sources.goods import goods_price_stats
+    # 판매가와 리셀가가 둘 다 있는 종류 3개: 리셀가 = 판매가 × 1.5  → 비율 0.667
+    nid = 1
+    for g, base in (("키링", 10000), ("인형", 30000), ("뱃지", 6000)):
+        _add_prices(session, g, "retail", [base] * 6, nid); nid += 10
+        _add_prices(session, g, "resale", [base * 1.5] * 6, nid); nid += 10
+    _add_prices(session, "응원봉", "resale", [60000, 66000, 72000, 78000, 84000, 90000], nid)   # 판매가 자료 없음
+    st = goods_price_stats(session, date(2026, 11, 25))
+    assert st.loc["키링", "source"] == "retail" and st.loc["키링", "ref"] == 10000
+    assert st.loc["응원봉", "source"] == "resale"
+    assert st.loc["응원봉", "resale_ratio"] == pytest.approx(2 / 3)
+    assert st.loc["응원봉", "ref"] == pytest.approx(75000 * 2 / 3)
+
+
+def test_price_stats_resale_fallback_without_ratio(session):
+    from salesopt.sources.goods import goods_price_stats
+    _add_prices(session, "응원봉", "resale", [60000, 66000, 72000, 78000, 84000, 90000], 1)
+    st = goods_price_stats(session, date(2026, 11, 25))
+    r = st.loc["응원봉"]
+    assert r.source == "resale" and np.isnan(r.resale_ratio)
+    assert r.lo < 60000 * 0.6 and r.hi > 80000            # 비율을 모르니 아래로 넓게
+    assert r.lo < r.ref < r.hi

@@ -108,20 +108,50 @@ def kream_proxy_records(session: Session, tagger, start: date, end: date, window
     return out.drop(columns=["listing_id", "window", "days"]).reset_index(drop=True)
 
 
+MIN_OVERLAP_TYPES = 3          # 판매가·리셀가가 둘 다 있는 종류가 이만큼 있어야 비율을 믿는다
+
+
 def goods_price_stats(session: Session, as_of: date, days: int = 90, min_n: int = 5) -> pd.DataFrame:
-    """굿즈 종류별 판매가 분포 (최근 days 일, 리셀 제외): 보통 가격(중앙값)과 10~90% 범위.
-    판매 기록이 없는 종류를 계산할 때 기준 가격·검토할 가격 범위로 쓴다. index=goods_type."""
+    """굿즈 종류별 가격 분포 (최근 days 일): 보통 가격(중앙값)과 10~90% 범위. index=goods_type.
+    판매 기록이 없는 종류를 계산할 때 기준 가격·검토할 가격 범위로 쓴다.
+
+    source 열
+      retail : 판매처 가격 (애니메이트·아이돌 굿즈몰 등)
+      resale : 판매가 자료가 없어 KREAM 리셀 시세로 대신한 값
+               - 판매가·리셀가가 둘 다 있는 종류가 3개 이상이면, 그 종류들의 '판매가 ÷ 리셀가' 중앙값을
+                 비율로 곱해 판매가를 추정 (resale_ratio 열)
+               - 아니면 비율을 모르므로 범위 하한을 리셀가 10% 지점의 절반까지 넓힌다 (정가는 리셀가보다 낮음)
+    """
     if not (_has(session, "listing") and _has(session, "listing_snapshot")):
         return pd.DataFrame()
     end = datetime.combine(as_of + timedelta(days=1), time.min)
     rows = session.execute(text(
-        "SELECT l.goods_type, s.price FROM listing l JOIN listing_snapshot s ON s.listing_id = l.id "
-        "WHERE l.goods_type IS NOT NULL AND s.price > 0 AND COALESCE(l.seller_type, 'retail') <> 'resale' "
-        "AND s.observed_at >= :a AND s.observed_at < :b"),
+        "SELECT l.goods_type, s.price, COALESCE(l.seller_type, 'retail') FROM listing l "
+        "JOIN listing_snapshot s ON s.listing_id = l.id "
+        "WHERE l.goods_type IS NOT NULL AND s.price > 0 AND s.observed_at >= :a AND s.observed_at < :b"),
         {"a": end - timedelta(days=days), "b": end}).all()
     if not rows:
         return pd.DataFrame()
-    df = pd.DataFrame(rows, columns=["goods_type", "price"])
-    g = df.groupby("goods_type").price
-    out = pd.DataFrame({"n": g.size(), "ref": g.median(), "lo": g.quantile(0.1), "hi": g.quantile(0.9)})
-    return out[out.n >= min_n]
+    df = pd.DataFrame(rows, columns=["goods_type", "price", "seller"])
+    df["seller"] = np.where(df.seller == "resale", "resale", "retail")
+
+    def stats(d):
+        g = d.groupby("goods_type").price
+        out = pd.DataFrame({"n": g.size(), "ref": g.median(), "lo": g.quantile(0.1), "hi": g.quantile(0.9)})
+        return out[out.n >= min_n]
+
+    retail = stats(df[df.seller == "retail"]).assign(source="retail", resale_ratio=np.nan)
+    resale = stats(df[df.seller == "resale"])
+    both = retail.index.intersection(resale.index)
+    ratio = float(np.median(retail.loc[both, "ref"] / resale.loc[both, "ref"])) if len(both) >= MIN_OVERLAP_TYPES else None
+    fill = resale.drop(index=retail.index, errors="ignore").copy()
+    if not fill.empty:
+        if ratio is not None:
+            fill[["ref", "lo", "hi"]] *= ratio
+            fill["resale_ratio"] = ratio
+        else:
+            fill["lo"] = fill["lo"] * 0.5
+            fill["ref"] = np.sqrt(fill["lo"] * fill["hi"])
+            fill["resale_ratio"] = np.nan
+        fill["source"] = "resale"
+    return pd.concat([retail, fill])
