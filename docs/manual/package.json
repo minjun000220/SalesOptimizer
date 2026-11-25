@@ -1,0 +1,7 @@
+{
+  "name": "salesopt-manual",
+  "private": true,
+  "description": "모델 설명서 PDF 빌드: npm install && npm run build (Chromium·Playwright·Noto Sans CJK KR 필요)",
+  "scripts": { "build": "node build.js ../SalesOptimizer_모델설명서.pdf" },
+  "dependencies": { "katex": "0.16.11" }
+}

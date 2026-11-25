@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>SalesOptimizer 모델 설명서</title>
+<style>
+/*KATEX_CSS*/
+@page { size: A4; }
+:root { --ink:#141414; --ink2:#4a4a46; --ink3:#7a7974; --line:#e2e1dc; --soft:#f4f3ef; --accent:#1f63b8; --accent-soft:#e8f0fb; --warn:#8a5300; --warn-soft:#fff4e0; }
+* { box-sizing: border-box; }
+body { font-family: "Noto Sans CJK KR", sans-serif; color: var(--ink); font-size: 10.2pt; line-height: 1.62; margin: 0; }
+h1 { font-size: 22pt; margin: 0 0 6px; letter-spacing: -0.02em; }
+h2 { font-size: 15pt; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--ink); break-after: avoid; }
+h3 { font-size: 11.8pt; margin: 18px 0 6px; color: var(--accent); break-after: avoid; }
+h4 { font-size: 10.6pt; margin: 12px 0 4px; break-after: avoid; }
+p { margin: 6px 0; }
+.chapter { break-before: page; }
+.cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; }
+.cover .sub { font-size: 12.5pt; color: var(--ink2); margin-top: 8px; }
+.cover .meta { margin-top: 36px; font-size: 9.5pt; color: var(--ink3); line-height: 1.9; }
+.cover .bar { width: 64px; height: 6px; background: var(--accent); margin-bottom: 18px; border-radius: 3px; }
+.eq { background: var(--soft); border-radius: 8px; padding: 6px 14px; margin: 8px 0; break-inside: avoid; }
+.eq .katex-display { margin: 6px 0; }
+.eqname { font-size: 8.5pt; color: var(--ink3); font-weight: 700; letter-spacing: .02em; }
+ul.sym { margin: 4px 0 8px; padding-left: 0; list-style: none; break-inside: avoid; }
+ul.sym li { padding-left: 14px; position: relative; margin: 2px 0; }
+ul.sym li::before { content: "·"; position: absolute; left: 3px; color: var(--ink3); }
+.box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 10px 0; break-inside: avoid; }
+.box.key { border-color: #b8cdea; background: var(--accent-soft); }
+.box.warn { border-color: #f0d49b; background: var(--warn-soft); }
+.box b.t { display: block; margin-bottom: 2px; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 9.3pt; break-inside: avoid; }
+th, td { border-bottom: 1px solid var(--line); padding: 4px 7px; text-align: left; vertical-align: top; }
+th { background: var(--soft); font-weight: 700; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.toc { columns: 1; font-size: 10.5pt; }
+.toc div { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+.toc span.no { width: 26px; color: var(--accent); font-weight: 700; }
+.muted { color: var(--ink3); font-size: 9pt; }
+.figure { margin: 10px 0; break-inside: avoid; text-align: center; }
+.figure svg { max-width: 100%; }
+.caption { font-size: 8.8pt; color: var(--ink3); margin-top: 4px; }
+code { font-family: "Noto Sans Mono CJK KR", monospace; font-size: 8.8pt; background: var(--soft); padding: 0 4px; border-radius: 3px; }
+ol.steps { padding-left: 20px; margin: 6px 0; }
+ol.steps li { margin: 3px 0; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ===================================================================== 표지 -->
+<section class="cover">
+  <div class="bar"></div>
+  <h1>SalesOptimizer 모델 설명서</h1>
+  <div class="sub">아이돌 그룹 굿즈를 <b>몇 개, 얼마에</b> 만들어야 <b>안전하게 완판</b>할 수 있는가</div>
+  <div class="sub" style="font-size:10.5pt">조건부 생성모델 newsvendor (Gong·Liu·Zhang, 2024)의 확률 제약 변형 + IdolSentiments · Goods 연결</div>
+  <div class="meta">
+    구성 저장소: IdolSentiments (아이돌 호감도·관심도) · Goods (굿즈 트렌드 핫지수) · SalesOptimizer (수요 모델·최적화·웹)<br>
+    기반 논문: S. Gong, H. Liu, X. Zhang, <i>Deep Generative Demand Learning for Newsvendor and Pricing</i>, arXiv:2411.08631 (2024)<br>
+    작성 기준: 2026년 11월 코드 (main 브랜치)
+  </div>
+</section>
+
+<!-- ===================================================================== 목차 -->
+<section class="chapter">
+  <h2>목차</h2>
+  <div class="toc">
+    <div><span class="no">1</span>한눈에 보기: 무엇을, 어떻게 계산하나</div>
+    <div><span class="no">2</span>전체 구조: 세 프로그램과 데이터 흐름</div>
+    <div><span class="no">3</span>출발점: 논문의 newsvendor 와 가격 결정</div>
+    <div><span class="no">4</span>핵심 변형: "안전한 완판" 확률 제약</div>
+    <div><span class="no">5</span>입력 특징 x: 아이돌 점수와 굿즈 점수는 어떻게 계산되나</div>
+    <div><span class="no">6</span>수요 모델 ①: 중도절단 로그정규 모델 (기본)</div>
+    <div><span class="no">7</span>수요 모델 ②: 조건부 VAE (논문의 생성모델)</div>
+    <div><span class="no">8</span>모델 불확실성 막기: 앙상블과 보수적 분위수</div>
+    <div><span class="no">9</span>실제 기록으로 보장하기: Conformal 보정</div>
+    <div><span class="no">10</span>사전학습: 공개 판매 데이터로 가격 반응 배우기</div>
+    <div><span class="no">11</span>웹 계산기: 같은 식을 즉시 계산하는 방법</div>
+    <div><span class="no">12</span>검증: 정답을 아는 시뮬레이션 결과</div>
+    <div><span class="no">13</span>운영 구조, 한계와 다음 단계</div>
+    <div><span class="no">부록</span>기호표</div>
+  </div>
+</section>
+
+<!-- ===================================================================== 1 -->
+<section class="chapter">
+  <h2>1. 한눈에 보기</h2>
+  <p>사용자가 <b>아이돌 그룹, 굿즈 종류, 개당 원가</b>를 넣으면, 프로그램은 다음을 계산합니다.</p>
+  <table>
+    <tr><th>결과</th><th>뜻</th></tr>
+    <tr><td><b>적정 판매가</b> \(p^\star\)</td><td>완판 확률 조건을 지키면서 기대 이익이 가장 큰 가격</td></tr>
+    <tr><td><b>추천 생산 수량</b> \(q^\star\)</td><td>그 가격에서 "이만큼 만들면 \(1-\alpha\) 이상의 확률로 다 팔린다"는 수량</td></tr>
+    <tr><td><b>예상 판매량 (수요)</b></td><td>그 가격에서 수요의 중앙값과 10~90% 범위</td></tr>
+    <tr><td><b>완판 확률</b>, <b>기대 이익</b></td><td>추천 가격·수량에서의 \(\P(D \ge q^\star)\) 와 \(\E[\text{이익}]\)</td></tr>
+  </table>
+
+  <h3>핵심 아이디어 세 가지</h3>
+  <ol class="steps">
+    <li><b>수요를 숫자 하나가 아니라 분포로 예측합니다.</b> "평균 400개"가 아니라 "이 가격이면 수요가 이런 모양으로 흩어진다"를 배웁니다. 평균만으로는 완판 확률을 계산할 수 없기 때문입니다 (논문의 Proposition 1: 평균으로 계산한 이익은 항상 과대평가).</li>
+    <li><b>목표를 "기대 이익 최대"에서 "완판 확률을 지키면서 기대 이익 최대"로 바꿨습니다.</b> 원래 논문의 해는 수요분포의 \(\rho=(p-c)/(p-s)\) 분위수인데, 굿즈처럼 이익률이 높으면 \(\rho\) 가 커서 많이 만들고 자주 남깁니다(시뮬레이션에서 완판 확률 약 20%). 이 프로그램은 \(\min(\alpha,\rho)\) 분위수를 씁니다.</li>
+    <li><b>데이터가 적어도 안전하도록 세 겹으로 보호합니다.</b> ① 모델 여러 개(앙상블) 중 보수적인 값, ② 실제 판매 기록으로 하는 conformal 보정(모델이 틀려도 평균 완판 확률 보장), ③ 공개 판매 데이터로 미리 배운 가격 반응(사전학습).</li>
+  </ol>
+
+  <div class="box key"><b class="t">한 문장 요약</b>
+  "그룹 인기와 굿즈 유행 점수를 넣으면, 가격마다 수요의 분포를 예측하고, 그 분포의 아래쪽 분위수만큼만 만들도록 추천한다. 그중 기대 이익이 가장 큰 가격을 고른다."</div>
+</section>
+
+<!-- ===================================================================== 2 -->
+<section class="chapter">
+  <h2>2. 전체 구조</h2>
+  <div class="figure">
+  <svg viewBox="0 0 720 430" width="680" font-family="Noto Sans CJK KR" font-size="11">
+    <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#555"/></marker></defs>
+    <!-- 수집 -->
+    <rect x="10" y="20" width="200" height="120" rx="10" fill="#e8f0fb" stroke="#9cb8e0"/>
+    <text x="110" y="42" text-anchor="middle" font-weight="700" font-size="12.5">IdolSentiments</text>
+    <text x="110" y="62" text-anchor="middle">유튜브 댓글 · 디시 글 수집</text>
+    <text x="110" y="80" text-anchor="middle">SBERT 문장 감성 분석</text>
+    <text x="110" y="98" text-anchor="middle">→ 그룹·멤버 호감도·관심도</text>
+    <text x="110" y="124" text-anchor="middle" fill="#666" font-size="10">매일 03:17 · 결과 JSON 커밋</text>
+
+    <rect x="10" y="170" width="200" height="120" rx="10" fill="#e8f0fb" stroke="#9cb8e0"/>
+    <text x="110" y="192" text-anchor="middle" font-weight="700" font-size="12.5">Goods</text>
+    <text x="110" y="212" text-anchor="middle">애니메이트 · KREAM · 디시 수집</text>
+    <text x="110" y="230" text-anchor="middle">굿즈 종류별 신호 7개</text>
+    <text x="110" y="248" text-anchor="middle">→ 핫지수 0~100</text>
+    <text x="110" y="274" text-anchor="middle" fill="#666" font-size="10">매일 09:17~ · Supabase 저장</text>
+
+    <rect x="10" y="320" width="200" height="90" rx="10" fill="#fff4e0" stroke="#e6c27a"/>
+    <text x="110" y="344" text-anchor="middle" font-weight="700" font-size="12.5">실제 판매 기록</text>
+    <text x="110" y="364" text-anchor="middle">웹 '판매 기록' 페이지 입력</text>
+    <text x="110" y="382" text-anchor="middle">가격 · 만든/팔린 수량 · 완판</text>
+
+    <!-- SalesOptimizer -->
+    <rect x="260" y="20" width="250" height="390" rx="12" fill="#f4f3ef" stroke="#bbb"/>
+    <text x="385" y="44" text-anchor="middle" font-weight="700" font-size="13">SalesOptimizer (매일 06:43)</text>
+    <rect x="280" y="60" width="210" height="46" rx="8" fill="#fff" stroke="#ccc"/>
+    <text x="385" y="80" text-anchor="middle">① ingest-idol</text><text x="385" y="96" text-anchor="middle" fill="#666" font-size="10">아이돌 점수 날짜별 영구 저장</text>
+    <rect x="280" y="118" width="210" height="46" rx="8" fill="#fff" stroke="#ccc"/>
+    <text x="385" y="138" text-anchor="middle">② 특징 x 만들기</text><text x="385" y="154" text-anchor="middle" fill="#666" font-size="10">판매 시작일 이전 값만 (누수 방지)</text>
+    <rect x="280" y="176" width="210" height="62" rx="8" fill="#fff" stroke="#ccc"/>
+    <text x="385" y="196" text-anchor="middle">③ 수요분포 학습</text><text x="385" y="212" text-anchor="middle" fill="#666" font-size="10">중도절단 로그정규 × 10 (앙상블)</text><text x="385" y="227" text-anchor="middle" fill="#666" font-size="10">+ 가격 탄력성 사전분포</text>
+    <rect x="280" y="250" width="210" height="46" rx="8" fill="#fff" stroke="#ccc"/>
+    <text x="385" y="270" text-anchor="middle">④ Conformal 보정</text><text x="385" y="286" text-anchor="middle" fill="#666" font-size="10">분위수 수준 α → a*</text>
+    <rect x="280" y="308" width="210" height="46" rx="8" fill="#fff" stroke="#ccc"/>
+    <text x="385" y="328" text-anchor="middle">⑤ publish</text><text x="385" y="344" text-anchor="middle" fill="#666" font-size="10">모델 파라미터 · 특징 → Supabase</text>
+    <text x="385" y="386" text-anchor="middle" fill="#666" font-size="10">사전학습: Food Demand · Online Retail</text>
+
+    <!-- 웹 -->
+    <rect x="560" y="120" width="150" height="190" rx="12" fill="#e9f6ec" stroke="#9fd0aa"/>
+    <text x="635" y="144" text-anchor="middle" font-weight="700" font-size="12.5">웹 (Vercel)</text>
+    <text x="635" y="168" text-anchor="middle">계산기</text>
+    <text x="635" y="184" text-anchor="middle" fill="#666" font-size="10">그룹·굿즈·원가 입력</text>
+    <text x="635" y="200" text-anchor="middle" fill="#666" font-size="10">→ 즉시 계산 (TypeScript)</text>
+    <text x="635" y="232" text-anchor="middle">판매 기록</text>
+    <text x="635" y="248" text-anchor="middle" fill="#666" font-size="10">입력 · CSV · 수정 · 삭제</text>
+    <text x="635" y="290" text-anchor="middle" fill="#666" font-size="10">비밀번호 보호</text>
+
+    <line x1="210" y1="80" x2="278" y2="83" stroke="#555" marker-end="url(#ar)"/>
+    <line x1="210" y1="230" x2="278" y2="141" stroke="#555" marker-end="url(#ar)"/>
+    <line x1="210" y1="365" x2="278" y2="207" stroke="#555" marker-end="url(#ar)"/>
+    <line x1="490" y1="331" x2="558" y2="260" stroke="#555" marker-end="url(#ar)"/>
+    <path d="M560,250 C530,420 250,430 212,380" fill="none" stroke="#c08a2a" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+    <text x="440" y="420" fill="#a06d10" font-size="10">판매 기록 저장</text>
+  </svg>
+  <div class="caption">그림 1. 세 프로그램과 데이터 흐름. 수집은 각 프로그램이 따로 하고, SalesOptimizer 가 결과를 모아 학습·보정한 뒤 웹이 읽어 즉시 계산한다.</div>
+  </div>
+
+  <h3>역할 분담</h3>
+  <table>
+    <tr><th>단계</th><th>담당</th><th>저장 위치</th></tr>
+    <tr><td>그룹 점수 계산</td><td>IdolSentiments (매일 03:17)</td><td>GitHub <code>web/public/data/*.json</code></td></tr>
+    <tr><td>굿즈 점수 계산</td><td>Goods (매일 09:17부터 2시간 간격 재시도)</td><td>Supabase <code>hot_score</code>, <code>mention</code>, <code>listing_snapshot</code></td></tr>
+    <tr><td>그룹 점수 영구 보관</td><td>SalesOptimizer <code>ingest-idol</code></td><td><code>so_idol_snapshot</code></td></tr>
+    <tr><td>판매 기록</td><td>웹 판매 기록 페이지</td><td><code>so_sales_record</code></td></tr>
+    <tr><td>학습·보정·업로드</td><td>SalesOptimizer <code>publish</code> (매일 06:43)</td><td><code>so_model</code> (파라미터), <code>so_context</code> (특징)</td></tr>
+    <tr><td>추천 계산·화면</td><td>웹 (Next.js, Vercel)</td><td>— (요청마다 계산)</td></tr>
+  </table>
+</section>
+
+<!-- ===================================================================== 3 -->
+<section class="chapter">
+  <h2>3. 출발점: 논문의 newsvendor 와 가격 결정</h2>
+  <p>Newsvendor(신문 판매상) 문제는 "팔기 전에 몇 개를 준비할지"를 정하는 고전적인 문제입니다. 너무 많이 만들면 재고가 남고, 너무 적게 만들면 팔 기회를 놓칩니다.</p>
+
+  <h3>3.1 이익 함수</h3>
+  <div class="eq"><span class="eqname">식 (3.1) 한 번 판매의 이익</span>
+  \[ \Pi(d,p,q) \;=\; p\,\min(q,d) \;+\; s\,(q-d)^+ \;-\; c\,q \;-\; F\cdot\1[q>0] \]</div>
+  <ul class="sym">
+    <li>\(d\): 실제 수요 (팔 수 있었던 개수). 만들기 전에는 모르는 확률변수 \(D\) 의 실현값</li>
+    <li>\(p\): 판매가, \(q\): 생산 수량, \(c\): 개당 원가, \(s\): 남은 재고의 개당 처분가 (폐기면 0)</li>
+    <li>\(\min(q,d)\): 실제로 팔린 개수 — 수요가 많아도 만든 만큼만 팔린다</li>
+    <li>\((q-d)^+ = \max(q-d,0)\): 남은 재고 개수</li>
+    <li>\(F\): 1회 생산 고정비(디자인·금형 등). 만들지 않으면(\(q=0\)) 0 — 논문에는 없고 이 프로그램에서 추가</li>
+  </ul>
+  <p>같은 식을 "부족 비용·과잉 비용"으로 다시 쓰면 구조가 잘 보입니다 (\(F\) 제외):</p>
+  <div class="eq">\[ \Pi = (p-c)\,d \;-\; \underbrace{(c-s)}_{c_o:\ \text{과잉 비용}}(q-d)^+ \;-\; \underbrace{(p-c)}_{c_u:\ \text{부족 비용}}(d-q)^+ \]</div>
+  <ul class="sym">
+    <li>1개 더 만들었는데 안 팔리면 \(c-s\) 손해, 1개 덜 만들어서 못 팔면 \(p-c\) 의 이익을 놓친다</li>
+  </ul>
+
+  <h3>3.2 조건부 기대 이익</h3>
+  <p>그룹·굿즈 상황 \(x\) 와 가격 \(p\) 가 주어졌을 때 수요는 확률분포 \(D\mid(X=x,P=p)\) 를 따릅니다.</p>
+  <div class="eq"><span class="eqname">식 (3.2) 논문 식 (4)</span>
+  \[ \pi(x,p,q) \;=\; \E\big[\,\Pi(D,p,q)\;\big|\;X=x,\;P=p\,\big] \]</div>
+
+  <h3>3.3 최적 수량은 분위수 (논문 Proposition 2)</h3>
+  <p>\(\pi\) 는 \(q\) 에 대해 오목하고, \(q\) 를 1 늘릴 때 기대 이익의 변화는 \(c_u\,\P(D>q) - c_o\,\P(D\le q)\) 입니다. 이것이 0 이 되는 곳이 최적입니다.</p>
+  <div class="eq"><span class="eqname">식 (3.3) 임계비율 해</span>
+  \[ q^{*}(x,p) = F^{-1}_{D\mid x,p}\!\big(\rho(p)\big), \qquad \rho(p)=\frac{c_u}{c_u+c_o}=\frac{p-c}{p-s} \]</div>
+  <ul class="sym">
+    <li>\(F^{-1}_{D|x,p}(\cdot)\): 수요분포의 분위수 함수 ("하위 몇 % 지점의 수요")</li>
+    <li>\(\rho(p)\): 임계비율. 예) \(p=12{,}000,\ c=4{,}000,\ s=0\) → \(\rho=0.67\): 수요의 67% 분위수만큼 만든다</li>
+  </ul>
+  <p>생성모델에서 샘플 \(\hat d^{(1)},\dots,\hat d^{(M)}\) 을 뽑았다면, 정렬 후 \(\lceil M\rho\rceil\) 번째 값이 답입니다 (논문 Algorithm 1).</p>
+
+  <h3>3.4 가격까지 정하기 (논문 Algorithm 2)</h3>
+  <div class="eq"><span class="eqname">식 (3.4)</span>
+  \[ \hat p(x) = \arg\max_{p\in\tilde{\mathcal P}}\; \hat\pi\big(x,p,\hat q(x,p)\big), \qquad \hat\pi(x,p,q)=\frac1M\sum_{m=1}^{M}\Pi\big(\hat d^{(m)},p,q\big) \]</div>
+  <ul class="sym">
+    <li>\(\tilde{\mathcal P}\): 가격 격자 (예: 9,000원부터 500원 간격). 각 가격에서 분위수 해를 구하고 기대 이익이 가장 큰 가격을 고른다</li>
+    <li>가격이 바뀌면 수요분포 자체가 바뀌므로(결정 의존 불확실성), 과거 판매 기록의 평균 이익을 최대화하는 일반적인 방법(ERM)은 쓸 수 없다 — 가격을 무한히 올리면 이익이 무한대가 되는 것처럼 보이기 때문(논문 3.3절)</li>
+  </ul>
+
+  <div class="box warn"><b class="t">원래 기준의 문제</b>
+  굿즈는 이익률이 높아 \(\rho\) 가 0.6~0.8 로 큽니다. 그러면 수요의 위쪽 분위수만큼 만들게 되어, 시뮬레이션에서 <b>완판 확률이 약 17~21%</b>에 그쳤습니다 (12장). 기대 이익은 최대지만, "다 팔린다"는 목표와는 거리가 멉니다.</div>
+</section>
+
+<!-- ===================================================================== 4 -->
+<section class="chapter">
+  <h2>4. 핵심 변형: "안전한 완판" 확률 제약</h2>
+  <h3>4.1 문제 정의</h3>
+  <div class="eq"><span class="eqname">식 (4.1) 확률 제약 newsvendor</span>
+  \[ \max_{p,\;q}\ \ \pi(x,p,q) \qquad \text{subject to}\qquad \P\big(D\ge q \,\big|\, x,p\big)\;\ge\;1-\alpha \]</div>
+  <ul class="sym">
+    <li>\(\P(D\ge q)\): 만든 \(q\) 개가 전부 팔릴 확률 = <b>완판 확률</b></li>
+    <li>\(\alpha\): 허용하는 "남을 확률". 기본 0.1 (완판 확률 90% 이상). 웹에서 80~98% 로 바꿀 수 있다</li>
+  </ul>
+
+  <h3>4.2 해: 분위수 수준을 낮춘다</h3>
+  <p>제약식을 분위수로 바꾸면 \(\P(D\ge q)\ge 1-\alpha \iff q \le F^{-1}(\alpha)\) 입니다. 그리고 \(\pi\) 는 \(q\) 에 대해 오목하며 \(F^{-1}(\rho)\) 에서 최대이므로:</p>
+  <div class="eq"><span class="eqname">식 (4.2) 안전 수량</span>
+  \[ q^{\text{safe}}(x,p) \;=\; F^{-1}_{D\mid x,p}\Big(\min\big(\alpha,\ \rho(p)\big)\Big) \]</div>
+  <ul class="sym">
+    <li>보통 \(\alpha<\rho\) 이므로 \(q^{\text{safe}}=F^{-1}(\alpha)\): <b>수요의 하위 10% 지점만큼</b> 만든다. "수요가 이보다 적을 확률은 10%뿐"</li>
+    <li>\(\rho<\alpha\) (이익률이 아주 낮은 가격)이면 원래 해 자체가 더 보수적이므로 그대로 쓴다</li>
+    <li>증명: \(q\le F^{-1}(\alpha)\) 영역에서 오목함수 \(\pi\) 는 꼭짓점 \(F^{-1}(\rho)\) 쪽으로 증가하므로 경계 \(F^{-1}(\alpha)\) 가 최대</li>
+  </ul>
+
+  <h3>4.3 가격 선택과 실무 조건</h3>
+  <div class="eq"><span class="eqname">식 (4.3)</span>
+  \[ p^\star=\arg\max_{p\in\tilde{\mathcal P}} \ \pi\big(x,p,q^{\text{safe}}(x,p)\big),\qquad \text{단 } q^{\text{safe}}\ge \text{MOQ},\ \ \pi>0 \]</div>
+  <ul class="sym">
+    <li>MOQ: 최소 생산 수량. 안전 수량이 이보다 작으면 그 가격에서는 "만들지 않음"(\(q=0\))</li>
+    <li>최대 생산 수량이 있으면 \(q^{\text{safe}}\leftarrow\min(q^{\text{safe}},q_{\max})\) — 줄이는 것은 완판 확률을 높이므로 안전하다</li>
+    <li>모든 가격에서 이익이 0 이하이면 "이익이 나는 가격이 없음"(만들지 않는 것이 최선)</li>
+  </ul>
+
+  <h3>4.4 숫자 예시</h3>
+  <p>키링, 원가 4,000원, 가격 12,000원에서 수요분포가 \(\log(1+D)\sim N(6.0,\,0.5^2)\) 라고 하면:</p>
+  <table>
+    <tr><th>기준</th><th>분위수 수준</th><th>수량</th><th class="n">완판 확률</th></tr>
+    <tr><td>논문 원래 (기대 이익 최대)</td><td>\(\rho=0.667\)</td><td>\(e^{6.0+0.5\cdot0.43}-1\approx 499\)</td><td class="n">33%</td></tr>
+    <tr><td>안전 완판 (\(\alpha=0.1\))</td><td>\(0.1\)</td><td>\(e^{6.0-0.5\cdot1.28}-1\approx 211\)</td><td class="n">90%</td></tr>
+  </table>
+  <p class="muted">\(\Phi^{-1}(0.667)\approx0.43,\ \Phi^{-1}(0.1)\approx-1.28\). 실제 프로그램은 여기에 앙상블 보수화(8장)와 보정(9장)을 더한다.</p>
+</section>
+
+<!-- ===================================================================== 5 -->
+<section class="chapter">
+  <h2>5. 입력 특징 x</h2>
+  <p>수요분포를 바꾸는 "상황"을 숫자 10개와 굿즈 종류로 나타냅니다. 앞의 6개는 IdolSentiments, 뒤의 4개는 Goods 에서 옵니다.</p>
+  <table>
+    <tr><th>특징</th><th>뜻</th><th>출처·계산</th></tr>
+    <tr><td><code>favor</code></td><td>그룹 호감도 0~100</td><td>IdolSentiments, 식 (5.3)·(5.5)</td></tr>
+    <tr><td><code>interest</code></td><td>그룹 관심도 0~100</td><td>IdolSentiments, 식 (5.6)</td></tr>
+    <tr><td><code>controversy</code></td><td>논란도 0~1</td><td>IdolSentiments, 식 (5.7)</td></tr>
+    <tr><td><code>log_mentions_per_day</code></td><td>하루 언급 수의 로그</td><td>\(\log(\text{언급 수}/\text{기간})\)</td></tr>
+    <tr><td><code>favor_change_7d</code></td><td>호감도 7일 변화</td><td>최근 값 − 7일 이상 전 가장 가까운 값</td></tr>
+    <tr><td><code>member_hhi</code></td><td>멤버 언급 쏠림도</td><td>식 (5.8)</td></tr>
+    <tr><td><code>hot_index</code></td><td>굿즈 종류 핫지수 0~100</td><td>Goods, 식 (5.11)</td></tr>
+    <tr><td><code>buzz_z</code></td><td>커뮤니티 언급 증가의 표준점수</td><td>Goods 신호 \(z\) 값</td></tr>
+    <tr><td><code>sold_out_ratio</code></td><td>최근 품절 비율</td><td>Goods 신호 값</td></tr>
+    <tr><td><code>group_type_buzz_7d</code></td><td>이 그룹 갤러리에서 이 굿즈 종류 언급 수 (7일)</td><td>Goods <code>mention</code> 집계</td></tr>
+    <tr><td><code>goods_type</code></td><td>굿즈 종류 (범주형)</td><td>원-핫, 종류별 가격 탄력성</td></tr>
+  </table>
+
+  <h3>5.1 IdolSentiments: 문장 감성</h3>
+  <p>유튜브 댓글·디시 글을 문장으로 나누고, 각 문장을 한국어 SBERT(<code>ko-sroberta-multitask</code>)로 768차원 벡터 \(v\) 로 바꿉니다. 라벨 없이 시작하기 위해 "기준 문장(앵커)"과의 유사도로 감성을 정합니다.</p>
+  <div class="eq"><span class="eqname">식 (5.1) 앵커 zero-shot 감성</span>
+  \[ s_k(v)=\frac{1}{K}\sum_{a\in \text{top}K(k)}\cos(v,a), \qquad (p_{\text{neg}},p_{\text{neu}},p_{\text{pos}})=\operatorname{softmax}\!\Big(\frac{s_{\text{neg}},s_{\text{neu}},s_{\text{pos}}}{\tau}\Big) \]</div>
+  <ul class="sym">
+    <li>\(\text{top}K(k)\): 감성 \(k\) 의 앵커 문장 중 \(v\) 와 가장 비슷한 \(K=3\) 개. \(\tau=0.05\) 는 확신 정도 조절(온도)</li>
+  </ul>
+
+  <h3>5.2 IdolSentiments: 문장 가중치와 점수</h3>
+  <div class="eq"><span class="eqname">식 (5.2) 언급 가중치</span>
+  \[ w_i = s_{\text{src}}\cdot\big(1+\ln(1+\text{좋아요}_i)\big)\cdot 0.5^{\,\text{경과일}_i/30}\cdot \text{conf}_i\cdot \text{rel}_i \]</div>
+  <ul class="sym">
+    <li>좋아요가 많을수록, 최근일수록(반감기 30일) 크게 반영</li>
+    <li>\(\text{conf}\): 멤버 연결 신뢰도 (이름 직접 언급 1.0, 앞 문장 이어받기 0.6, 제목 맥락 0.5, 그룹 맥락 0.7)</li>
+    <li>\(\text{rel}=\operatorname{clip}\big((\max\cos(v,\text{관련성 앵커})-0.2)/0.2,\,0,\,1\big)\): 맥락으로만 연결된 문장이 실제로 아이돌 얘기인지</li>
+  </ul>
+  <div class="eq"><span class="eqname">식 (5.3) 베이지안 보정 긍정 강도</span>
+  \[ F_m=\frac{\sum_{i\in m} w_i\,p_{\text{pos},i} + k\,\mu}{\sum_{i\in m} w_i + k},\qquad \mu=\frac{\sum_i w_i p_{\text{pos},i}}{\sum_i w_i},\quad k=20 \]</div>
+  <ul class="sym"><li>언급이 적은 대상은 전체 평균 \(\mu\) 쪽으로 당겨서 우연한 극단값을 줄인다</li></ul>
+  <div class="eq"><span class="eqname">식 (5.4)·(5.5) 멤버·그룹 호감도</span>
+  \[ \text{호감도}_m = 100\Big[\lambda F_m + (1-\lambda)\frac{P_m}{\max_j P_j}\Big],\quad P_m=\sum_{i\in m}w_i p_{\text{pos},i},\ \lambda=0.7 \]
+  \[ \text{그룹 호감도}=\beta\cdot100F_{\text{group}}+(1-\beta)\sum_m \text{share}_m\cdot\text{호감도}_m,\quad \beta=0.5 \]</div>
+  <div class="eq"><span class="eqname">식 (5.6)·(5.7) 관심도·논란도</span>
+  \[ \text{그룹 관심도}=100\cdot\frac{\ln(1+\text{하루 언급 수})}{\ln(1+5000)},\qquad \text{논란도}=\frac{\sum w\,p_{\text{neg}}}{\sum w\,(p_{\text{pos}}+p_{\text{neg}})} \]</div>
+  <div class="eq"><span class="eqname">식 (5.8) 멤버 쏠림도 (Herfindahl 지수)</span>
+  \[ \text{HHI}=\sum_{m} \text{share}_m^2,\qquad \text{share}_m=\frac{N_m}{\sum_j N_j} \]</div>
+  <ul class="sym"><li>멤버가 \(M\) 명이면 \(1/M\)(고르게)부터 1(한 명에게 몰림)까지. 개인 팬덤이 강한 그룹을 구분</li></ul>
+
+  <h3>5.3 Goods: 신호와 핫지수</h3>
+  <p>굿즈 종류(응원봉, 키링 …)마다 7가지 신호를 "최근 7일 vs 그 이전 28일"의 변화율로 계산합니다. 절대량이 아니라 변화를 봐야 늘 많이 팔리는 종류가 항상 1등 하지 않습니다.</p>
+  <div class="eq"><span class="eqname">식 (5.9) 변화율 신호</span>
+  \[ \text{signal}=\log\frac{\bar r_{\text{최근 7일}}+\varepsilon}{\bar b_{\text{이전 28일}}+\varepsilon} \]</div>
+  <ul class="sym"><li>베스트 랭킹 점유율, 커뮤니티 언급량, 리셀 매물, 리셀 거래 속도, 리뷰 증가, 판매처 증가 (품절 비율은 수준값)</li></ul>
+  <div class="eq"><span class="eqname">식 (5.10) 강건한 표준점수</span>
+  \[ z=\operatorname{clip}\!\Big(\frac{x-\operatorname{median}(x)}{1.4826\cdot\operatorname{MAD}(x)},\,-4,\,4\Big) \]</div>
+  <ul class="sym"><li>평균·표준편차 대신 중앙값·MAD 를 써서 이상치 하나에 전체가 흔들리지 않게 한다 (1.4826 은 정규분포에서 표준편차와 맞추는 상수)</li></ul>
+  <div class="eq"><span class="eqname">식 (5.11) 핫지수</span>
+  \[ S=\frac{\sum_j w_j z_j}{\sum_j w_j},\qquad \text{핫지수}=\frac{100}{1+e^{-1.5S}} \]</div>
+  <ul class="sym"><li>가중치 \(w_j\): 베스트 점유율 1.5, 언급 1.2, 품절 1.2, 리셀 거래 1.2, 리셀 매물 1.0, 리뷰 0.8, 판매처 0.5. 50 = 평소, 70 이상 = 상승</li></ul>
+
+  <h3>5.4 특징을 모델에 넣는 규칙</h3>
+  <ul class="sym">
+    <li><b>누수 방지</b>: 판매 시작일 \(t\) 의 기록에는 \(t\) <b>이전</b>(당일 제외)에 계산된 점수만 붙인다. 미래 정보가 섞이면 실제보다 잘 맞는 것처럼 보이기 때문</li>
+    <li><b>표준화</b>: \(\tilde x_j=(x_j-\bar x_j)/\text{sd}_j\) (학습 데이터 기준). <b>빈 값</b>은 0, 즉 학습 평균으로 둔다</li>
+    <li><b>굿즈 종류</b>: 첫 종류를 기준으로 하는 원-핫. 종류별로 가격 탄력성을 따로 둔다(6장)</li>
+    <li>실제 기록에서 값이 있는 비율이 50% 미만인 특징은 학습에서 뺀다</li>
+  </ul>
+</section>
+
+<!-- ===================================================================== 6 -->
+<section class="chapter">
+  <h2>6. 수요 모델 ①: 중도절단 로그정규 모델</h2>
+  <p>논문은 수요분포를 cGAN·cVAE 같은 딥러닝 생성모델로 배우지만, 그런 모델은 수천 건의 데이터가 필요합니다. 판매 기록이 수십~수백 건일 때를 위해 <b>파라미터가 적은 생성모델</b>을 기본으로 씁니다. 같은 인터페이스(샘플 생성)라서 데이터가 많아지면 7장의 cVAE 로 바꿀 수 있습니다.</p>
+
+  <h3>6.1 모델 식</h3>
+  <div class="eq"><span class="eqname">식 (6.1) 수요분포</span>
+  \[ Y=\log(1+D)\ \sim\ \mathcal N\big(\mu(x,p),\ \sigma(x)^2\big) \]
+  \[ \mu(x,p)=b_0+\tilde x^\top b\;-\;e_g\,\big(\log p-\bar\ell_g\big),\qquad \log\sigma(x)=\operatorname{clip}\big(a_0+\tilde x^\top a,\,-4,\,3\big) \]
+  \[ e_g = e_{\min}+\operatorname{softplus}(\theta_g),\qquad \operatorname{softplus}(t)=\log(1+e^{t}) \]</div>
+  <ul class="sym">
+    <li>\(\log(1+D)\): 수요는 0 이상이고 오른쪽 꼬리가 길다. 로그를 취하면 정규분포에 가깝고, \(+1\) 은 수요 0 을 다루기 위함</li>
+    <li>\(\mu\): 평균 수준. \(b\) 는 특징의 효과(예: 호감도가 높으면 수요 증가)</li>
+    <li>\(e_g\): 굿즈 종류 \(g\) 의 <b>가격 탄력성</b>. 가격이 1% 오르면 수요가 약 \(e_g\)% 준다. softplus 로 항상 \(e_g\ge e_{\min}\ge0\) — "비쌀수록 잘 팔린다"는 학습을 원천 차단</li>
+    <li>\(\bar\ell_g\): 종류 \(g\) 의 학습 데이터 평균 로그 가격 (중심화해서 절편과 탄력성이 섞이지 않게)</li>
+    <li>\(\sigma(x)\): <b>불확실성도 상황마다 다르다</b>. 예) 논란도가 높으면 수요가 더 들쭉날쭉</li>
+  </ul>
+  <p>생성: \(\varepsilon\sim N(0,1)\) 을 뽑아 \(\hat d=\lfloor \exp(\mu+\sigma\varepsilon)-1\rfloor^+\). 이것이 논문의 생성기 \(G(x,p,\eta)\) 와 같은 역할입니다.</p>
+
+  <h3>6.2 중도절단(완판) 우도 — Tobit</h3>
+  <p>완판된 기록은 "수요 = 판매량"이 아니라 "수요 ≥ 판매량"만 알려 줍니다. 판매량을 그대로 수요로 쓰면 인기 상품일수록 수요를 낮게 잡는 편향이 생깁니다.</p>
+  <div class="eq"><span class="eqname">식 (6.2) 로그우도</span>
+  \[ \ell(\vartheta)=\sum_{i:\ \text{남음}}\Big[\log\phi(z_i)-\log\sigma_i\Big]\;+\;\sum_{i:\ \text{완판}}\log\big(1-\Phi(z_i)\big),\qquad z_i=\frac{y_i-\mu_i}{\sigma_i},\ y_i=\log(1+\text{판매량}_i) \]</div>
+  <ul class="sym">
+    <li>\(\phi,\Phi\): 표준정규 밀도·누적분포. 남은 기록은 "그 값이 나올 확률(밀도)", 완판 기록은 "그 값 이상이 나올 확률"</li>
+    <li>테스트(<code>test_lognormal_handles_censoring</code>): 완판을 무시하면 평균을 0.1 이상 과소추정, 반영하면 오차 0.05 이내</li>
+  </ul>
+  <div class="eq"><span class="eqname">식 (6.3) 기울기 (최적화에 사용)</span>
+  \[ \frac{\partial(-\ell_i)}{\partial\mu_i}=\begin{cases}-z_i/\sigma_i & \text{남음}\\ -h(z_i)/\sigma_i & \text{완판}\end{cases},\qquad \frac{\partial(-\ell_i)}{\partial\log\sigma_i}=\begin{cases}1-z_i^2\\ -h(z_i)\,z_i\end{cases},\qquad h(z)=\frac{\phi(z)}{1-\Phi(z)} \]</div>
+  <ul class="sym"><li>\(h\): 위험률(hazard). 해석적 기울기로 L-BFGS-B 최적화를 빠르고 안정적으로 한다</li></ul>
+
+  <h3>6.3 벌점(정규화)과 사전분포</h3>
+  <div class="eq"><span class="eqname">식 (6.4) 최소화하는 목적함수</span>
+  \[ \mathcal L(\vartheta)=-\ell(\vartheta)\;+\;\lambda\|b\|^2\;+\;4\lambda\|a\|^2\;+\;\sum_{g}\frac{(e_g-e_0)^2}{2s_0^2} \]</div>
+  <ul class="sym">
+    <li>\(\lambda\|b\|^2\): 릿지 벌점. 데이터가 적을 때 특징 효과를 0 쪽으로 당겨 과적합을 막는다. \(\sigma\) 쪽은 4배 강하게</li>
+    <li>\(\lambda\) 는 \(\{0.3,1,3,10,30,100\}\) 중 <b>5겹 교차검증 중도절단 로그우도</b>가 가장 큰 값. 데이터가 적으면 큰 \(\lambda\) 가 골라진다</li>
+    <li>마지막 항: 가격 탄력성의 <b>사전분포</b> \(e_g\sim N(e_0,s_0^2)\). 공개 판매 데이터로 \(e_0=1.276,\ s_0=0.921\) (10장). 기록이 적으면 이 값 근처, 많아지면 데이터 쪽으로</li>
+    <li>교차검증이 필요한 이유: 고정된 약한 릿지로는 50건에서 파라미터 34개가 과적합되어 \(\sigma\) 를 작게 잡고, 안전 수량이 낙관적이 되었다 (완판 확률 0.84 → 자동 선택 후 0.89)</li>
+  </ul>
+</section>
+
+<!-- ===================================================================== 7 -->
+<section class="chapter">
+  <h2>7. 수요 모델 ②: 조건부 VAE (논문의 생성모델)</h2>
+  <p>판매 기록이 1,000건 이상이면 비선형 관계와 분포 모양(두 봉우리 등)까지 배우는 딥러닝 생성모델을 쓸 수 있습니다. 논문이 쓴 조건부 VAE 를 안전 완판용으로 바꿨습니다.</p>
+  <div class="eq"><span class="eqname">식 (7.1) 생성기</span>
+  \[ z\sim N(0,I_2),\quad (\mu,\log\sigma)=\text{Decoder}_\psi(\tilde x,\tilde\ell,z),\quad Y=\mu+\sigma\varepsilon,\quad D=e^{Y}-1 \]</div>
+  <ul class="sym">
+    <li>\(\tilde\ell\): 표준화한 로그 가격. 잠재변수 \(z\)(2차원)가 "특징으로 설명 안 되는 수요의 모양"을 담는다</li>
+    <li>구조: 은닉 64 × 2층, SiLU 활성화. 인코더 입력은 \((\tilde x,\tilde\ell,y,\text{완판 여부})\)</li>
+  </ul>
+  <div class="eq"><span class="eqname">식 (7.2) 학습 목표 (중도절단 ELBO + 단조성 벌점)</span>
+  \[ \min_{\psi,\omega}\ \E_{i}\Big[-\E_{q_\omega(z|x_i,y_i)}\log p_\psi(y_i\mid x_i,\ell_i,z)\;+\;\mathrm{KL}\big(q_\omega(z|\cdot)\,\|\,N(0,I)\big)\Big]\;+\;\gamma\,\E\big[(\mu(\ell+\delta)-\mu(\ell))^+\big] \]</div>
+  <ul class="sym">
+    <li>\(\log p_\psi(y|\cdot)\): 남은 기록은 정규 로그밀도, 완판 기록은 \(\log(1-\Phi(z))\) — 6.2절과 같은 중도절단 처리 (<b>논문에는 없는 변형</b>)</li>
+    <li>KL 항: 인코더가 만든 \(z\) 분포를 표준정규에 가깝게 → 생성 시 \(z\sim N(0,I)\) 로 뽑을 수 있다 (재매개화 \(z=m+e^{v/2}\epsilon\))</li>
+    <li>단조성 벌점(\(\gamma=10,\ \delta=0.1\)): 같은 상황에서 가격을 올렸는데 평균 수요가 커지면 벌점 (<b>논문에는 없는 변형</b>). 과거 가격이 수요를 보고 정해진 데이터(내생성)에서 잘못된 학습을 줄인다</li>
+    <li>학습: Adam(학습률 0.002, 가중치 감쇠 \(10^{-4}\)), 400 에폭, 배치 256</li>
+  </ul>
+  <div class="box warn"><b class="t">사용 주의</b>
+  시뮬레이션(2,000건)에서 cVAE 는 분포의 아래쪽 꼬리를 낙관해 보정 없이는 평균 완판 확률 0.82 에 그쳤고, 보정(150건) 후 0.94 가 되었습니다(시드 1개). 그래서 cVAE 는 반드시 9장의 보정과 함께 쓰고, 기본 모델은 로그정규입니다. 웹 계산기도 현재 로그정규 모델만 사용합니다.</div>
+</section>
+
+<!-- ===================================================================== 8 -->
+<section class="chapter">
+  <h2>8. 모델 불확실성 막기: 앙상블과 보수적 분위수</h2>
+  <p>4장의 해 \(F^{-1}(\alpha)\) 는 "모델이 정확하다면" 안전합니다. 데이터가 적으면 모델 자체가 틀릴 수 있으므로, 같은 모델을 <b>여러 번 다르게 학습</b>해서 그 차이를 반영합니다.</p>
+  <div class="eq"><span class="eqname">식 (8.1) 부트스트랩 앙상블</span>
+  \[ \mathcal D^{(b)} = \text{판매 기록 } n\text{건에서 복원추출한 } n\text{건},\qquad \hat\vartheta^{(b)}=\arg\min \mathcal L(\vartheta;\mathcal D^{(b)}),\quad b=1,\dots,B\ (B=10) \]</div>
+  <div class="eq"><span class="eqname">식 (8.2) 보수적 안전 수량</span>
+  \[ q_b=F^{-1}_{b}\big(\min(a,\rho)\big)=\exp\!\big(\mu_b+\sigma_b\,\Phi^{-1}(\min(a,\rho))\big)-1,\qquad q^{\text{safe}}=\Big\lfloor Q_{\gamma}\big(q_1,\dots,q_B\big)\Big\rfloor \]</div>
+  <ul class="sym">
+    <li>\(q_b\): \(b\) 번째 모델이 본 안전 수량. \(Q_\gamma\): 10개 중 하위 \(\gamma=10\%\) 백분위(선형 보간) — 거의 가장 조심스러운 모델을 따른다</li>
+    <li>\(a\): 분위수 수준. 보정 전에는 \(\alpha\), 보정 후에는 9장의 \(a^\star\le\alpha\)</li>
+    <li>기록이 많으면 모델들이 비슷해져 보수화 효과가 줄고, 적으면 커진다 — 데이터 양에 맞춰 자동 조절</li>
+  </ul>
+  <div class="eq"><span class="eqname">식 (8.3) 화면에 보이는 값 (멤버 평균 = 혼합분포)</span>
+  \[ \widehat{\P}(D\ge q)=\frac1B\sum_b\Big[1-\Phi\Big(\frac{\log(1+q)-\mu_b}{\sigma_b}\Big)\Big],\qquad \text{모델 합의}=\frac1B\sum_b \1\big[\P_b(D\ge q)\ge1-\alpha\big] \]</div>
+  <ul class="sym"><li>\(D\) 는 정수이므로 \(D\ge q\iff Y\ge\log(1+q)\) (정수 \(q\))</li></ul>
+</section>
+
+<!-- ===================================================================== 9 -->
+<section class="chapter">
+  <h2>9. 실제 기록으로 보장하기: Conformal 보정</h2>
+  <p>앙상블도 모델이라 틀릴 수 있습니다. Conformal 보정은 <b>모델이 맞다는 가정 없이</b>, 실제 판매 기록 \(n\) 건만으로 "평균 완판 확률 \(\ge1-\alpha\)"를 보장하도록 분위수 수준을 조정합니다.</p>
+
+  <h3>9.1 점수 (모델 기준 '실제 수요가 몇 분위였나')</h3>
+  <div class="eq"><span class="eqname">식 (9.1)</span>
+  \[ L_i(a)=q^{\text{safe}}_i \text{ (수준 } a\text{ 에서의 8장 규칙)},\qquad s_i=\max\{\,a\in\mathcal A:\ L_i(a)\le D_i\,\} \]</div>
+  <ul class="sym">
+    <li>\(\mathcal A\): 0.0005~0.5 의 520개 수준 격자. \(L_i(a)\) 는 \(a\) 에 대해 증가하므로 "실제 수요 이하인 가장 큰 수준"</li>
+    <li>모델이 정확하면 \(s_i\) 는 대략 균등분포(PIT, 확률적분변환)</li>
+  </ul>
+
+  <h3>9.2 보정된 수준과 보장</h3>
+  <div class="eq"><span class="eqname">식 (9.2)</span>
+  \[ a^\star = s_{(k)},\qquad k=\big\lfloor (n+1)\alpha\big\rfloor,\qquad \text{추천에 쓰는 수준}=\min(a^\star,\alpha,\rho) \]</div>
+  <ul class="sym"><li>\(s_{(k)}\): 점수를 작은 순으로 정렬했을 때 \(k\) 번째</li></ul>
+  <div class="box key"><b class="t">보장 (교환가능성만 가정)</b>
+  새 상황의 점수 \(s_{\text{new}}\) 와 보정 기록 \(s_1,\dots,s_n\) 이 교환가능하면 \(s_{\text{new}}\) 의 순위는 균등하므로
+  \[ \P\big(D_{\text{new}}<L_{\text{new}}(a^\star)\big)=\P\big(s_{\text{new}}<s_{(k)}\big)\le\frac{k}{n+1}\le\alpha . \]
+  즉 <b>완판 확률 \(\ge1-\alpha\)</b>. 모델의 형태가 틀려도 성립합니다.</div>
+  <ul class="sym">
+    <li><b>최소 건수</b>: \(k\ge1\) 이려면 \(n\ge 1/\alpha-1\). \(\alpha=0.1\) → 9건, \(\alpha=0.05\) → 19건</li>
+    <li>보장은 보정 기록과 비슷한 상황 <b>전체의 평균</b>이다. 개별 상황마다 보장되지는 않는다</li>
+    <li>기본은 \(a^\star\le\alpha\) 로만 조정(줄이기만). 모델이 너무 보수적이어도 늘리지 않는다</li>
+  </ul>
+
+  <h3>9.3 완판 기록의 처리</h3>
+  <p>완판 기록은 실제 수요를 모르고 \(D_i\ge\text{판매량}_i\) 만 압니다. 판매량으로 계산한 점수 \(\tilde s_i\le s_i\) 입니다.</p>
+  <div class="two">
+  <div class="box"><b class="t">strict (기본)</b>
+  \(\tilde s_i\) 를 그대로 사용. 점수를 작게 잡으므로 보장이 그대로 성립하지만, 과거에 적게 만들어 완판된 기록이 많으면 매우 보수적.</div>
+  <div class="box"><b class="t">impute (선택)</b>
+  모델을 믿고 \(s_i\sim U(\tilde s_i,1)\) 로 보고 기대 위반 수로 계산:
+  \[ \sum_{i}\P(s_i<a)\le(n+1)\alpha-1 ,\quad \P(s_i<a)=\begin{cases}\frac{(a-\tilde s_i)^+}{1-\tilde s_i}&\text{완판}\\ \1[\tilde s_i<a]&\text{남음}\end{cases} \]
+  을 만족하는 가장 큰 \(a\le\alpha\).</div>
+  </div>
+
+  <h3>9.4 운영 방식</h3>
+  <p>매일 학습 때 판매 기록의 30%를 보정용으로 떼어 둡니다(보정용이 9건 이상일 때만). 나머지 70%로 앙상블을 학습하고, 보정용 기록으로 \(a^\star\) 를 구해 모델과 함께 저장합니다.</p>
+</section>
+
+<!-- ===================================================================== 10 -->
+<section class="chapter">
+  <h2>10. 사전학습: 공개 판매 데이터로 가격 반응 배우기</h2>
+  <p>기록이 적을 때 가장 불확실한 값은 가격 탄력성 \(e_g\) 입니다. 가격과 판매량이 함께 있는 공개 데이터로 그 "출발점"을 정합니다. 이 데이터들은 아이돌 굿즈가 아니므로 <b>가격 반응만</b> 빌려 옵니다.</p>
+
+  <h3>10.1 양방향 고정효과 모형</h3>
+  <div class="eq"><span class="eqname">식 (10.1)</span>
+  \[ \log(1+q_{it}) = \alpha_i + \tau_t - e\,\log p_{it} + \kappa^\top w_{it} + u_{it} \]</div>
+  <ul class="sym">
+    <li>\(i\): 상품(Food 는 메뉴×지점), \(t\): 주. \(\alpha_i\): 상품 효과 — "원래 잘 팔리는 상품이 비싸다"를 지운다</li>
+    <li>\(\tau_t\): 주 효과 — 계절·전체 수요 변화를 지운다. \(w_{it}\): 홍보 여부(이메일·홈페이지 노출)</li>
+    <li>결과적으로 <b>같은 상품의 가격이 바뀌었을 때 판매량이 얼마나 바뀌었나</b>만으로 \(e\) 를 추정</li>
+    <li>추정: 상품 평균과 주 평균을 번갈아 빼는 교대 투영(불균형 패널) 후 최소제곱. 표준오차는 상품 단위 군집 강건 \(\hat V=(\tilde X^\top\tilde X)^{-1}\big(\sum_i \tilde X_i^\top\hat u_i\hat u_i^\top\tilde X_i\big)(\tilde X^\top\tilde X)^{-1}\)</li>
+  </ul>
+
+  <h3>10.2 상품마다 다른 탄력성의 퍼짐 (경험적 베이즈)</h3>
+  <div class="eq"><span class="eqname">식 (10.2)</span>
+  \[ \hat e_i=-\frac{\sum_t \ddot x_{it}\ddot y_{it}}{\sum_t \ddot x_{it}^2},\qquad \widehat{\operatorname{se}}_i^2=\frac{\hat\sigma_i^2}{\sum_t\ddot x_{it}^2},\qquad \hat s^2=\operatorname{Var}(\hat e_i)-\overline{\widehat{\operatorname{se}}_i^2} \]</div>
+  <ul class="sym">
+    <li>\(\ddot x,\ddot y\): 고정효과를 뺀 값. 상품별 기울기의 분산에는 "진짜 차이"와 "측정 잡음"이 섞여 있으므로 잡음 분산을 뺀다</li>
+    <li>가격 변화가 아주 작은 상품(정밀도 하위 10%)은 제외 — 기울기 값으로 자르면 퍼짐이 과소추정되어 정밀도 기준으로 자른다(테스트로 확인)</li>
+  </ul>
+
+  <h3>10.3 데이터 정리 규칙</h3>
+  <ul class="sym">
+    <li><b>Food Demand</b> (Kaggle): 메뉴 51 × 지점 77, 145주. 판매가 = 실제 결제가(할인 포함), 통제: 이메일 홍보, 홈페이지 노출</li>
+    <li><b>Online Retail II</b> (UCI): 영국 선물·소품 몰 2009–2011. 취소·반품·배송비 등 비상품 코드 제외. 가격 = <b>한 번에 12개 이하</b>(소매 단위) 거래의 최빈 가격 — 대량 구매 할인가가 섞이면 "많이 살수록 싸다"가 탄력성처럼 보이기 때문</li>
+  </ul>
+
+  <h3>10.4 결과와 결합</h3>
+  <table>
+    <tr><th>데이터</th><th class="n">관측</th><th class="n">상품 수</th><th class="n">탄력성 \(\hat e\)</th><th class="n">표준오차</th><th class="n">상품 간 퍼짐 \(\hat s\)</th></tr>
+    <tr><td>Food Demand</td><td class="n">456,467</td><td class="n">3,577</td><td class="n">1.576</td><td class="n">0.024</td><td class="n">0.877</td></tr>
+    <tr><td>Online Retail II</td><td class="n">173,114</td><td class="n">3,522</td><td class="n">0.976</td><td class="n">0.019</td><td class="n">0.753</td></tr>
+  </table>
+  <div class="eq"><span class="eqname">식 (10.3) 사전분포 결합</span>
+  \[ e_0=\frac1J\sum_j\hat e_j=1.276,\qquad s_0=\sqrt{\overline{\hat s_j^{\,2}}+\operatorname{sd}_j(\hat e_j)^2}=0.921 \]</div>
+  <ul class="sym">
+    <li>탄력성 1.28: 가격을 10% 올리면 판매량이 약 12% 준다</li>
+    <li>퍼짐에 "데이터 간 차이"까지 더해 넓게 잡았다 — 굿즈는 두 데이터와 또 다를 수 있으므로, 실제 기록이 조금만 쌓여도 그쪽으로 움직이게</li>
+    <li>Food 의 메뉴 분류별 탄력성은 0.3(사이드)~2.9(피자)로 크게 다르다 — 종류별 탄력성을 따로 두는 이유</li>
+  </ul>
+</section>
+
+<!-- ===================================================================== 11 -->
+<section class="chapter">
+  <h2>11. 웹 계산기: 같은 식을 즉시 계산하는 방법</h2>
+  <p>웹은 Python 모델을 돌리지 않습니다. 매일 학습한 <b>파라미터</b>(멤버별 \(b_0,b,a_0,a,e_g,\bar\ell_g\), 인코더의 평균·표준편차, 보정 수준 \(a^\star\))와 그룹×굿즈별 <b>특징 값</b>을 읽어 TypeScript 로 계산합니다. 샘플링 대신 정확한 식과 수치적분을 써서 새로고침해도 같은 결과가 나옵니다.</p>
+  <div class="eq"><span class="eqname">식 (11.1) 기대 판매량 (수치적분)</span>
+  \[ \E[\min(q,D)]\approx\frac1B\sum_{b}\sum_{k=1}^{801} \omega_k\,\min\!\Big(q,\ \big\lfloor e^{\mu_b+\sigma_b z_k}-1\big\rfloor^+\Big),\qquad z_k\in[-8,8],\ \ \omega_k\propto\phi(z_k) \]</div>
+  <div class="eq"><span class="eqname">식 (11.2) 기대 이익</span>
+  \[ \pi = p\,\E[\min(q,D)] + s\big(q-\E[\min(q,D)]\big) - c\,q - F \]</div>
+  <div class="eq"><span class="eqname">식 (11.3) 예상 수요의 분위수 (혼합분포, 이분법 80회)</span>
+  \[ \text{find } y:\ \ \frac1B\sum_b\Phi\Big(\frac{y-\mu_b}{\sigma_b}\Big)=\text{level},\qquad \text{수요 분위수}=\lfloor e^{y}-1\rfloor^+ \]</div>
+  <ul class="sym">
+    <li>화면의 "예상 판매량" = 추천 가격에서 수요의 중앙값(level 0.5), 범위는 0.1~0.9</li>
+    <li>가격 격자: 입력한 범위(없으면 학습 데이터 가격 범위)를 약 40칸, 100·200·500·1,000원 … 중 알맞은 간격</li>
+    <li>Python 과 TypeScript 결과가 같은지 테스트로 확인(Python 이 만든 기준값과 비교: 수량 ±1개, 이익 0.1% 이내)</li>
+    <li>판매 기록이 20건 미만이면 가짜 데이터로 학습한 예시 모델을 사용 (화면에는 표시하지 않음 — 운영 시 유의)</li>
+  </ul>
+</section>
+
+<!-- ===================================================================== 12 -->
+<section class="chapter">
+  <h2>12. 검증: 정답을 아는 시뮬레이션</h2>
+  <p>실제 판매 기록이 없으므로, <b>참 수요분포를 아는</b> 가짜 세계를 만들어 "정말 안전한가"를 확인했습니다 (논문 6장과 같은 방식).</p>
+
+  <h3>12.1 시뮬레이션 세계 (DGP)</h3>
+  <div class="eq"><span class="eqname">식 (12.1)</span>
+  \[ \log(1+D)=\mu_0(x)-e_g\log\frac{p}{p_g^{\text{ref}}}+0.3\,u+\sigma(x)\,\varepsilon,\qquad u,\varepsilon\sim N(0,1) \]
+  \[ \mu_0(x)=\beta_g+0.8(\ell m-6)+0.35f+0.30h+0.25\,\text{buzz}+0.30(\log(1+gb)-2)+0.6(so-0.3)+0.2\tanh(f)\,h+0.8(\text{hhi}-0.3) \]
+  \[ \sigma(x)=0.30+\text{논란도}+\text{종류별 추가}+0.03\,|\Delta\text{호감도}|,\qquad f=\frac{\text{호감도}-60}{10},\ h=\frac{\text{핫지수}-50}{20} \]</div>
+  <ul class="sym">
+    <li>굿즈 6종(키링, 인형, 아크릴스탠드, 응원봉, 티셔츠, 포토카드), 탄력성 0.7~1.9. 비선형 상호작용 \(\tanh(f)h\) 와 \(|\Delta|\) 는 로그정규 모델이 정확히 표현 못 하는 부분(일부러 넣은 모델 오차)</li>
+    <li>\(u\): 모델이 못 보는 숨은 수요 충격. 과거 생산량은 담당자의 감 \(\exp(\mu+0.3u+N(0,0.5^2))\) → 약 절반이 완판(중도절단)</li>
+    <li>비용: 원가 = 기준가의 35%, 처분가 = 원가의 20%, 고정비 30만 원, MOQ 50개</li>
+  </ul>
+
+  <h3>12.2 지표</h3>
+  <ul class="sym">
+    <li><b>평균 완판 확률</b>: 추천한 (가격, 수량)에서 <b>참 분포</b>로 계산한 \(\P(D\ge q)\) 의 평균. 목표 ≥ 0.90</li>
+    <li><b>목표 미달 비율</b>: 참 완판 확률이 0.88 미만인 상황의 비율</li>
+    <li><b>이익 비율</b>: 참 기대 이익의 합 ÷ "참 분포를 알고 같은 안전 조건을 푼 최선(oracle)"의 합</li>
+  </ul>
+
+  <h3>12.3 데이터 양에 따른 결과 (α = 0.1, 시드 3개 평균)</h3>
+  <table>
+    <tr><th>학습 기록</th><th>보정 기록</th><th class="n">평균 완판 확률</th><th class="n">목표 미달</th><th class="n">이익 비율</th></tr>
+    <tr><td>50</td><td>–</td><td class="n">0.889</td><td class="n">29%</td><td class="n">0.30</td></tr>
+    <tr><td>50</td><td>50</td><td class="n">0.921</td><td class="n">24%</td><td class="n">0.21</td></tr>
+    <tr><td>100</td><td>–</td><td class="n">0.891</td><td class="n">28%</td><td class="n">0.43</td></tr>
+    <tr><td>300</td><td>–</td><td class="n">0.922</td><td class="n">20%</td><td class="n">0.55</td></tr>
+    <tr><td>300</td><td>100</td><td class="n">0.929</td><td class="n">15%</td><td class="n">0.64</td></tr>
+    <tr><td>2,000</td><td>–</td><td class="n">0.906</td><td class="n">23%</td><td class="n">0.86</td></tr>
+    <tr><td colspan="2">논문 원래 기준 (기대 이익 최대)</td><td class="n">0.17~0.21</td><td class="n">–</td><td class="n">1.3~2.1</td></tr>
+  </table>
+  <ul class="sym">
+    <li>데이터 양과 상관없이 평균 완판 확률은 목표 근처를 지킨다. <b>데이터가 늘면 안전성보다 이익이 좋아진다</b> (적을 때는 수량을 크게 줄여 안전을 지킴)</li>
+    <li>논문 원래 기준은 안전 조건이 없어 이익이 oracle 보다 크지만, 완판 확률은 약 20%</li>
+  </ul>
+
+  <h3>12.4 가장 큰 위험: 숨은 내생성 (학습 2,000건, 시드 2개)</h3>
+  <p>과거 가격이 판매자만 아는 수요 신호에 맞춰 정해진 경우(잘 팔릴 걸 알면 비싸게): \(p=p^{\text{ref}}\exp(0.3u+N(0,0.1^2))\).</p>
+  <table>
+    <tr><th>대응</th><th class="n">평균 완판 확률</th><th class="n">목표 미달</th><th class="n">이익 비율</th></tr>
+    <tr><td>없음</td><td class="n">0.832</td><td class="n">67%</td><td class="n">1.04</td></tr>
+    <tr><td>보정 150건</td><td class="n">0.860</td><td class="n">58%</td><td class="n">0.97</td></tr>
+    <tr><td>탄력성 하한 0.8</td><td class="n">0.880</td><td class="n">36%</td><td class="n">0.84</td></tr>
+    <tr><td>탄력성 하한 0.8 + 보정 150건</td><td class="n"><b>0.916</b></td><td class="n">18%</td><td class="n">0.74</td></tr>
+  </table>
+  <p>모델이 탄력성을 과소추정해 비싼 가격을 낙관하는 문제입니다. 가장 확실한 해결은 <b>가격을 의도적으로 바꿔 보는 실험</b>이고, 그게 어려우면 탄력성 하한·보정·사전분포를 함께 씁니다.</p>
+
+  <h3>12.5 사전학습의 효과 (기록 수별, 시드 4개)</h3>
+  <p>판매 기록 수를 바꿔 가며, 가격 탄력성 사전분포를 ① 쓰지 않을 때, ② 공개 데이터로 만든 값(1.28 ± 0.92)을 쓸 때, ③ 일부러 틀린 값(0.5 ± 0.3)을 쓸 때를 비교했습니다. 보정 없음, 시드 4개 × 상황 50개 평균.</p>
+  <table>
+    <tr><th>학습 기록</th><th>사전분포</th><th class="n">평균 완판 확률</th><th class="n">목표 미달</th><th class="n">이익 비율</th></tr>
+    <tr><td rowspan="3">10</td><td>없음</td><td class="n">0.811</td><td class="n">29%</td><td class="n">0.23</td></tr>
+    <tr><td><b>공개 데이터</b></td><td class="n"><b>0.834</b></td><td class="n"><b>24%</b></td><td class="n">0.16</td></tr>
+    <tr><td>틀린 값</td><td class="n">0.784</td><td class="n">32%</td><td class="n">0.26</td></tr>
+    <tr><td rowspan="3">20</td><td>없음</td><td class="n">0.830</td><td class="n">36%</td><td class="n">0.27</td></tr>
+    <tr><td><b>공개 데이터</b></td><td class="n"><b>0.855</b></td><td class="n"><b>32%</b></td><td class="n">0.24</td></tr>
+    <tr><td>틀린 값</td><td class="n">0.827</td><td class="n">35%</td><td class="n">0.27</td></tr>
+    <tr><td rowspan="3">50</td><td>없음</td><td class="n">0.894</td><td class="n">29%</td><td class="n">0.25</td></tr>
+    <tr><td><b>공개 데이터</b></td><td class="n">0.894</td><td class="n">31%</td><td class="n">0.24</td></tr>
+    <tr><td>틀린 값</td><td class="n">0.881</td><td class="n">33%</td><td class="n">0.30</td></tr>
+    <tr><td rowspan="3">150</td><td>없음</td><td class="n">0.879</td><td class="n">36%</td><td class="n">0.47</td></tr>
+    <tr><td><b>공개 데이터</b></td><td class="n">0.882</td><td class="n">38%</td><td class="n">0.44</td></tr>
+    <tr><td>틀린 값</td><td class="n">0.858</td><td class="n">41%</td><td class="n">0.53</td></tr>
+  </table>
+  <ul class="sym">
+    <li><b>기록이 10~20건일 때 사전학습이 안전성을 조금 높인다</b>: 평균 완판 확률 +0.02~0.03, 목표 미달 −4~5%p. 대신 수량을 더 조심스럽게 잡아 이익은 약간 줄어든다</li>
+    <li><b>50건 이상에서는 차이가 거의 없다</b> — 실제 기록이 사전분포를 덮어쓰기 때문(설계 의도대로)</li>
+    <li><b>틀린 사전분포는 안전성을 떨어뜨린다</b> (탄력성을 과소평가 → 비싼 가격을 낙관): 10건에서 0.784, 150건에서도 0.858. 사전분포를 넓게 잡은 이유</li>
+    <li>차이(0.02~0.03)는 시드 4개 기준이라 잡음 범위와 크게 다르지 않을 수 있다. 시뮬레이션의 참 탄력성(0.7~1.9)이 우연히 공개 데이터 값(1.28)과 비슷해 효과가 유리하게 나왔을 수도 있다</li>
+  </ul>
+  <div class="box warn"><b class="t">중요: 기록 10~20건으로는 사전학습을 써도 목표(90%)에 못 미친다</b>
+  평균 완판 확률 0.83~0.86. 이 구간에서는 conformal 보정(9장)으로 수량을 더 줄이거나, 목표 완판 확률을 높게(예: 95%) 잡아 여유를 두는 것을 권장한다. 50건부터 목표 근처(0.89)에 도달한다.</div>
+</section>
+
+<!-- ===================================================================== 13 -->
+<section class="chapter">
+  <h2>13. 운영 구조, 한계와 다음 단계</h2>
+  <h3>13.1 매일 자동 실행</h3>
+  <table>
+    <tr><th>시각 (KST)</th><th>작업</th></tr>
+    <tr><td>03:17</td><td>IdolSentiments: 등록된 그룹 수집·감성 분석 → 결과 JSON</td></tr>
+    <tr><td>06:43</td><td>SalesOptimizer: <code>ingest-idol</code> (점수 영구 저장) → <code>publish</code> (판매 기록으로 학습·보정, 모델·특징 업로드)</td></tr>
+    <tr><td>09:17~</td><td>Goods: 쇼핑몰·KREAM·디시 수집 → 핫지수 (성공할 때까지 2시간마다 재시도)</td></tr>
+    <tr><td>상시</td><td>웹: 계산 요청마다 최신 모델·특징으로 즉시 계산, 판매 기록 입력</td></tr>
+  </table>
+
+  <h3>13.2 한계</h3>
+  <ul class="sym">
+    <li><b>실제 판매 기록이 없으면 절대 수량은 믿을 수 없다.</b> 20건 미만이면 예시 모델이며, 사전학습은 가격 반응만 제공한다. 20~50건에서도 평균 완판 확률이 목표보다 낮을 수 있다 (12.5)</li>
+    <li>보정의 보장은 <b>평균</b>에 대한 것이다. 개별 상황에서는 목표에 못 미칠 수 있다(목표 미달 비율 15~30%)</li>
+    <li>최적 가격을 고르는 과정이 모델이 낙관하는 가격을 고르는 경향(optimizer's curse) — 데이터가 적을수록 크다</li>
+    <li>과거 가격이 수요를 보고 정해졌다면(내생성) 탄력성이 과소추정된다 (12.4)</li>
+    <li>IdolSentiments: 감성 모델(앵커 zero-shot)이 라벨로 검증되지 않았고, 관심도가 수집량(유튜브 할당량)에 묶여 그룹 간 비교가 어렵다. 멤버 이름이 일반 단어와 겹치는 오탐 가능("리즈 시절")</li>
+    <li>사전학습 데이터는 음식·소품이라 굿즈와 가격 반응이 다를 수 있다 (그래서 퍼짐을 넓게 잡음)</li>
+  </ul>
+
+  <h3>13.3 다음 단계</h3>
+  <ol class="steps">
+    <li>실제 판매 기록 축적 (남은 재고가 있었던 판매 포함, 가격 다양화) — 20건부터 실제 모델, 100건 이상이면 안전성 검증</li>
+    <li>가격 실험: 비슷한 굿즈를 몇 가지 가격에 팔아 보기 — 내생성을 직접 해결</li>
+    <li>KREAM 거래 수로 그룹·화제성 효과 사전학습 (리셀 가격은 내생적이므로 가격 효과에는 쓰지 않음)</li>
+    <li>IdolSentiments 감성 라벨링·SetFit 학습, 오탐 보정</li>
+    <li>기록이 1,000건 이상이면 cVAE 로 전환 (보정과 함께)</li>
+  </ol>
+</section>
+
+<!-- ===================================================================== 부록 -->
+<section class="chapter">
+  <h2>부록. 기호표</h2>
+  <table>
+    <tr><th>기호</th><th>뜻</th><th>기본값·범위</th></tr>
+    <tr><td>\(D,\ d\)</td><td>판매 기간 동안의 수요 (확률변수, 실현값)</td><td>0 이상 정수</td></tr>
+    <tr><td>\(x,\ \tilde x\)</td><td>상황 특징, 표준화한 특징</td><td>10개 + 굿즈 종류</td></tr>
+    <tr><td>\(p,\ q\)</td><td>판매가, 생산 수량</td><td></td></tr>
+    <tr><td>\(c,\ s,\ F\)</td><td>개당 원가, 처분가, 1회 고정비</td><td>사용자 입력</td></tr>
+    <tr><td>MOQ, \(q_{\max}\)</td><td>최소·최대 생산 수량</td><td>사용자 입력</td></tr>
+    <tr><td>\(\rho(p)\)</td><td>임계비율 \((p-c)/(p-s)\)</td><td>0~1</td></tr>
+    <tr><td>\(\alpha\)</td><td>허용 미완판 확률 (완판 확률 \(1-\alpha\))</td><td>0.1</td></tr>
+    <tr><td>\(\Pi,\ \pi\)</td><td>한 번의 이익, 기대 이익</td><td></td></tr>
+    <tr><td>\(Y=\log(1+D)\)</td><td>로그 수요</td><td></td></tr>
+    <tr><td>\(\mu,\ \sigma\)</td><td>로그 수요의 평균·표준편차</td><td>\(\log\sigma\in[-4,3]\)</td></tr>
+    <tr><td>\(e_g\)</td><td>굿즈 종류 \(g\) 의 가격 탄력성</td><td>\(\ge e_{\min}\)</td></tr>
+    <tr><td>\(e_0,\ s_0\)</td><td>탄력성 사전분포 평균·표준편차</td><td>1.276, 0.921</td></tr>
+    <tr><td>\(\lambda\)</td><td>릿지 벌점 강도</td><td>교차검증 \(\{0.3,\dots,100\}\)</td></tr>
+    <tr><td>\(B,\ \gamma\)</td><td>앙상블 크기, 보수적 백분위</td><td>10, 0.1</td></tr>
+    <tr><td>\(a^\star\)</td><td>conformal 로 보정된 분위수 수준</td><td>\(\le\alpha\)</td></tr>
+    <tr><td>\(\phi,\ \Phi\)</td><td>표준정규 밀도, 누적분포</td><td></td></tr>
+    <tr><td>\(h(z)\)</td><td>위험률 \(\phi(z)/(1-\Phi(z))\)</td><td></td></tr>
+  </table>
+  <h3>참고</h3>
+  <ul class="sym">
+    <li>S. Gong, H. Liu, X. Zhang (2024). Deep Generative Demand Learning for Newsvendor and Pricing. arXiv:2411.08631</li>
+    <li>G.-Y. Ban, C. Rudin (2019). The Big Data Newsvendor: Practical Insights from Machine Learning. Operations Research</li>
+    <li>V. Chernozhukov, K. Wüthrich, Y. Zhu (2021). Distributional conformal prediction. PNAS</li>
+    <li>J. Tobin (1958). Estimation of relationships for limited dependent variables. Econometrica</li>
+    <li>데이터: Kaggle Food Demand Forecasting; UCI Online Retail II (Chen, 2019)</li>
+  </ul>
+</section>
+</body>
+</html>
