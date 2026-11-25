@@ -51,6 +51,8 @@ python -m salesopt demo --n 300                    # 가짜 데이터로 전체 
 python -m salesopt backtest --n-train 50,300,2000  # 정말 안전한지 검증 (정답을 아는 시뮬레이션)
 python -m salesopt template --out sales.csv        # 실제 판매 기록 양식
 python -m salesopt ingest-idol                     # IdolSentiments 결과를 DB 에 저장 (매일)
+python -m salesopt import-sales --sales sales.csv   # 실제 판매 기록을 DB 에 저장
+python -m salesopt publish                         # 웹이 쓸 모델·특징 올리기 (매일)
 python -m salesopt recommend --group 아일릿 --sales sales.csv --types 키링,인형 \
     --cost 키링=4000,인형=11000 --fixed-cost 300000 --moq 50 --price 키링=9000~16000
 python -m salesopt recommend --group 아일릿 --sales sales.csv           # 종류를 비우면 Goods 점수로 후보 선정
@@ -73,6 +75,38 @@ python -m salesopt recommend --group 아일릿 --sales sales.csv           # 종
 
 그 밖의 옵션: `--alpha 0.1` (완판 확률 90%), `--model lognormal|cvae`, `--min-elasticity 0.8`, `--censored strict|impute`, `--calib-frac 0.3`.
 그룹과 Goods 갤러리의 연결은 `config/groups.yaml` 에 있습니다.
+
+## 웹 화면 (굿즈 완판 계산기)
+
+아이돌 그룹, 굿즈 종류, 개당 원가를 입력하면 다음을 보여 줍니다.
+- 적정 판매가와 추천 생산 수량
+- 그 가격에서의 예상 판매량(수요의 중앙값과 10~90% 범위)
+- 완판 확률과 기대 이익
+- 가격별 그래프와 표, 계산에 쓴 그룹·굿즈 점수
+
+세부 설정에서 목표 완판 확률, 판매가 범위, 고정비, 최소·최대 생산 수량, 재고 처분가를 바꿀 수 있습니다.
+
+```
+매일 GitHub Actions: ingest-idol → publish  ─▶  Supabase (so_model: 학습된 모델 파라미터, so_context: 그룹×굿즈 특징)
+웹 (Vercel, web/):   입력 → so_model + so_context 읽기 → 추천을 TypeScript 로 즉시 계산 (web/lib/optimize.ts)
+```
+
+- 웹은 Python 을 돌리지 않습니다. 매일 학습한 모델의 파라미터만 읽어서 바로 계산합니다(대기 없음).
+- 계산 결과는 Python 과 같습니다. `web/lib/optimize.test.ts` 가 `tests/test_publish.py` 에서 만든 값과 비교합니다.
+- 실제 판매 기록이 20건 미만이면 **가짜 데이터로 학습한 예시 모델**로 계산하고, 화면에 경고를 크게 표시합니다.
+- 실제 판매 기록은 `python -m salesopt import-sales --sales 판매기록.csv` 로 DB 에 넣습니다. 다음 날 publish 때 실제 모델로 바뀌고, 바로 바꾸려면 Actions 를 직접 실행합니다.
+
+### Vercel 배포
+1. vercel.com → **Add New → Project** → `SalesOptimizer` 저장소 Import
+2. **Root Directory** 를 `web` 으로 지정합니다 (Framework 는 Next.js 로 자동 인식)
+3. **Environment Variables**:
+   - `DATABASE_URL`: Goods 와 같은 Supabase Session pooler 주소 (GitHub Secrets 에 넣은 것과 같은 값)
+   - `ACCESS_PASSWORD` (선택): 넣으면 비밀번호를 아는 사람만 계산할 수 있습니다
+4. **Deploy** → 나온 주소를 폰·컴퓨터에서 엽니다
+
+배포 전에 GitHub Actions 의 "아이돌 점수 저장 + 웹 데이터 갱신" 을 한 번 실행해야 화면에 그룹 목록이 나옵니다.
+
+로컬 실행: `cd web && npm install && DATABASE_URL=... npm run dev` → http://localhost:3000 · 계산 테스트: `npm test`
 
 ## 매일 자동 저장 (GitHub Actions)
 
@@ -123,6 +157,7 @@ lognormal 모델, 시드 3개 평균, 상황 80개. `profit` = 참 분포를 아
 salesopt/
   optimize.py       확률 제약 newsvendor (논문 Algorithm 1·2 변형), 비용·MOQ
   inputs.py         명령줄 비용·가격 입력 (전체 / 종류별)
+  publish.py        웹용 모델 파라미터·특징 올리기 + 웹과 같은 결정적 추천 계산
   conformal.py      분위수 수준 conformal 보정 (중도절단 strict / impute)
   models/           lognormal(중도절단 Tobit, 교차검증 릿지, 탄력성 ≥ 하한), cvae(PyTorch), 앙상블
   simulate.py       정답을 아는 가짜 판매 데이터 (숨은 수요 충격·내생성 옵션)
@@ -133,6 +168,7 @@ salesopt/
   tagger.py         상품 제목 → 그룹 (IdolSentiments 별칭)
   schema.py         판매 기록 CSV
   cli.py            명령줄
+web/                Next.js 계산기 화면 (Vercel)
 ```
 
 ## 한계

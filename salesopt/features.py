@@ -79,11 +79,11 @@ def goods_features(session: Session, goods_type: str, before: date, gallery: str
         if _cache is not None:
             _cache[key] = hot
     row = hot.loc[goods_type] if (not hot.empty and goods_type in hot.index) else None
-    buzz = group_type_buzz(session, gallery, before) if gallery else pd.Series(dtype=float)
+    buzz = group_type_buzz(session, gallery, before)          # None = 갤러리 없음 또는 Goods 테이블 없음
     g = lambda k: float(row[k]) if row is not None and pd.notna(row[k]) else np.nan     # noqa: E731
     return {
         "hot_index": g("hot_index"), "buzz_z": g("buzz_z"), "sold_out_ratio": g("sold_out_ratio"),
-        "group_type_buzz_7d": float(buzz.get(goods_type, 0.0)) if gallery else np.nan,
+        "group_type_buzz_7d": float(buzz.get(goods_type, 0.0)) if buzz is not None else np.nan,
         "goods_scored_on": row["scored_on"] if row is not None else None,
     }
 
@@ -120,7 +120,7 @@ def select_candidates(session: Session, group: GroupInfo, before: date, k: int =
     if hot.empty:
         return []
     score = hot.hot_index.rank(pct=True)
-    if group.goods_gallery:
-        buzz = group_type_buzz(session, group.goods_gallery, before).reindex(hot.index).fillna(0)
-        score = score + buzz.rank(pct=True)
+    buzz = group_type_buzz(session, group.goods_gallery, before)
+    if buzz is not None:
+        score = score + buzz.reindex(hot.index).fillna(0).rank(pct=True)
     return list(score.sort_values(ascending=False).index[:k])

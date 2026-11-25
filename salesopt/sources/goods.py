@@ -57,10 +57,10 @@ def hot_scores(session: Session, as_of: date) -> pd.DataFrame:
     return pd.DataFrame(out).set_index("goods_type")
 
 
-def group_type_buzz(session: Session, gallery_id: str | None, as_of: date, days: int = 7) -> pd.Series:
+def group_type_buzz(session: Session, gallery_id: str | None, as_of: date, days: int = 7) -> pd.Series | None:
     """그룹 갤러리에서 최근 days 일 동안 굿즈 종류별 언급 수 (as_of 당일 제외, 미래 정보 누수 방지)."""
     if not gallery_id or not _has(session, "mention"):
-        return pd.Series(dtype=float)
+        return None                                   # 모름 (0 이 아님)
     end = datetime.combine(as_of, time.min)
     rows = session.execute(text(
         "SELECT goods_type, COUNT(*) FROM mention WHERE source_id = :s AND goods_type IS NOT NULL "

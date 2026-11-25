@@ -111,6 +111,48 @@ def cmd_ingest_idol(a) -> None:
         print(ingest(s, a.source or DEFAULT_SOURCE))
 
 
+def cmd_import_sales(a) -> None:
+    """판매 기록 CSV → so_sales_record (같은 그룹·종류·상품명·시작일·채널이면 덮어씀)."""
+    from sqlalchemy import select
+
+    from salesopt.features import load_group_map, resolve_group
+    from salesopt.schema import load_sales_csv
+    from salesopt.storage import SalesRecord, init_db, session_scope
+    init_db()
+    gmap = load_group_map()
+    added = updated = 0
+    with session_scope() as s:
+        df = load_sales_csv(Path(a.sales), lambda g: resolve_group(g, gmap, s))
+        cols = ("group_key", "goods_type", "product_name", "price", "unit_cost", "quantity_made", "quantity_sold",
+                "sold_out", "sale_start", "channel", "source")
+        for _, r in df.iterrows():
+            vals = {c: (None if pd.isna(r[c]) else r[c]) for c in cols}
+            vals["sold_out"] = bool(vals["sold_out"])
+            cur = s.scalar(select(SalesRecord).where(
+                SalesRecord.group_key == vals["group_key"], SalesRecord.goods_type == vals["goods_type"],
+                SalesRecord.product_name == vals["product_name"], SalesRecord.sale_start == vals["sale_start"],
+                SalesRecord.channel == vals["channel"]))
+            if cur is None:
+                s.add(SalesRecord(**vals))
+                added += 1
+            else:
+                for k, v in vals.items():
+                    setattr(cur, k, v)
+                updated += 1
+        total = s.query(SalesRecord).filter(SalesRecord.source == "real").count()
+    print(f"판매 기록 추가 {added}건, 갱신 {updated}건 → 전체 {total}건")
+
+
+def cmd_publish(a) -> None:
+    """웹이 쓸 모델(실제/예시)과 그룹×굿즈 특징을 DB 에 올린다 (매일 ingest-idol 다음에 실행)."""
+    from salesopt.features import load_group_map
+    from salesopt.publish import publish
+    from salesopt.storage import init_db, session_scope
+    init_db()
+    with session_scope() as s:
+        print(publish(s, load_group_map(), alpha=a.alpha, min_elasticity=a.min_elasticity))
+
+
 def cmd_recommend(a) -> None:
     from salesopt.features import (build_context, build_training_frame, feature_coverage, load_group_map,
                                    resolve_group, select_candidates)
@@ -213,6 +255,11 @@ def main(argv=None) -> None:
 
     i = sub.add_parser("ingest-idol"); i.add_argument("--source", default="", help="URL 또는 로컬 폴더")
 
+    im = sub.add_parser("import-sales"); im.add_argument("--sales", required=True)
+    pb = sub.add_parser("publish")
+    pb.add_argument("--alpha", type=float, default=0.1)
+    pb.add_argument("--min-elasticity", type=float, default=0.0)
+
     r = sub.add_parser("recommend"); common(r)
     r.add_argument("--group", required=True)
     r.add_argument("--sales", required=True, help="실제 판매 기록 CSV (python -m salesopt template 참고)")
@@ -228,7 +275,7 @@ def main(argv=None) -> None:
 
     a = p.parse_args(argv)
     {"demo": cmd_demo, "backtest": cmd_backtest, "template": cmd_template, "ingest-idol": cmd_ingest_idol,
-     "recommend": cmd_recommend}[a.cmd](a)
+     "recommend": cmd_recommend, "import-sales": cmd_import_sales, "publish": cmd_publish}[a.cmd](a)
 
 
 if __name__ == "__main__":

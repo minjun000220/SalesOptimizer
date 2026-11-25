@@ -56,8 +56,37 @@ class SalesRecord(Base):
     source: Mapped[str] = mapped_column(String(20), default="real")   # real | proxy
 
 
+class PublishedModel(Base):
+    """웹이 읽는 학습된 수요 모델 (파라미터 JSON). kind = real(실제 판매 기록) | demo(가짜 데이터 예시)"""
+    __tablename__ = "so_model"
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True)
+    trained_at: Mapped[datetime] = mapped_column(DateTime)
+    payload: Mapped[dict] = mapped_column(JSON)
+
+
+class PublishedContext(Base):
+    """웹이 읽는 (그룹, 굿즈 종류)별 현재 특징. 매일 publish 가 다시 계산한다."""
+    __tablename__ = "so_context"
+    __table_args__ = (UniqueConstraint("group_key", "goods_type"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_key: Mapped[str] = mapped_column(String(80), index=True)
+    group_name: Mapped[str] = mapped_column(String(120))
+    aliases: Mapped[list] = mapped_column(JSON, default=list)
+    goods_type: Mapped[str] = mapped_column(String(50))
+    as_of: Mapped[date] = mapped_column(Date)
+    features: Mapped[dict] = mapped_column(JSON)          # 특징 이름 → 값 (없으면 null)
+
+
+def normalize_url(url: str) -> str:
+    """Supabase 가 주는 'postgresql://…' / 'postgres://…' 주소 → SQLAlchemy + psycopg3 형식 (Goods 와 같은 규칙)."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
 def database_url() -> str:
-    return os.getenv("DATABASE_URL", "sqlite:///data/salesopt.db")
+    return normalize_url(os.getenv("DATABASE_URL") or "sqlite:///data/salesopt.db")
 
 
 _engine = None
@@ -66,7 +95,7 @@ _Session = None
 
 def init_db(url: str | None = None):
     global _engine, _Session
-    url = url or database_url()
+    url = normalize_url(url) if url else database_url()
     if url.startswith("sqlite:///") and not url.startswith("sqlite:///:memory:"):
         os.makedirs(os.path.dirname(url.removeprefix("sqlite:///")) or ".", exist_ok=True)
     _engine = create_engine(url, pool_pre_ping=True)

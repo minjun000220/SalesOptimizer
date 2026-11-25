@@ -2,7 +2,7 @@
 # IdolSentiments 는 최근 90일 추이만 남기므로, 나중에 들어올 판매 기록에 '그때의 그룹 점수'를 붙이려면
 # 지금부터 쌓아 두어야 한다.
 # 필요한 설정: Settings → Secrets and variables → Actions → DATABASE_URL (Goods 와 같은 Session pooler 주소)
-name: 아이돌 점수 저장
+name: 아이돌 점수 저장 + 웹 데이터 갱신
 
 on:
   schedule:
@@ -31,6 +31,8 @@ jobs:
         run: |
           if [ -z "$DATABASE_URL" ]; then echo "::error::DATABASE_URL 시크릿이 없습니다"; exit 1; fi
       - run: python -m salesopt ingest-idol
+      - name: 웹용 모델·특징 올리기
+        run: python -m salesopt publish
 
   test:
     runs-on: ubuntu-latest

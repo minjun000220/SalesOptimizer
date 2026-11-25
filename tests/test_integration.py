@@ -111,3 +111,12 @@ def test_sales_csv(tmp_path):
     bad.to_csv(tmp_path / "bad.csv", index=False)
     with pytest.raises(ValueError):
         load_sales_csv(tmp_path / "bad.csv")
+
+
+def test_database_url_normalized(monkeypatch):
+    from salesopt.storage import database_url, normalize_url
+    assert normalize_url("postgresql://u:p@h:5432/d") == "postgresql+psycopg://u:p@h:5432/d"
+    assert normalize_url("postgres://u:p@h/d") == "postgresql+psycopg://u:p@h/d"
+    assert normalize_url("postgresql+psycopg://x") == "postgresql+psycopg://x"
+    monkeypatch.setenv("DATABASE_URL", "")
+    assert database_url().startswith("sqlite:///")
