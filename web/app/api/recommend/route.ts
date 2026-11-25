@@ -60,18 +60,18 @@ export async function POST(req: Request) {
     if (ctx === "no-group") return bad(`'${group}' 그룹을 찾지 못했습니다`, 404);
     if (ctx === "no-type") return bad(`'${goodsType}' 은(는) 아직 계산할 수 없는 굿즈 종류입니다`, 422);
 
-    const real = await getModel("real");
-    const useReal = real && real.categories.includes(goodsType);
-    const model = useReal ? real : await getModel("demo");
+    // 실제 판매 기록 모델이 있으면 그것을, 없으면 예시 모델. 판매 기록에 없는 종류는 '평균 굿즈 종류'로 계산
+    const model = (await getModel("real")) ?? (await getModel("demo"));
     if (!model) return bad("모델이 아직 없습니다", 503);
-    if (!model.categories.includes(goodsType))
-      return bad(`'${goodsType}' 은(는) 계산할 수 없는 굿즈 종류입니다`, 422);
 
-    const support = model.price_support[goodsType];
+    const f = ctx.features as Record<string, number | null | undefined>;
+    const goodsRange: [number, number] | null = f._price_lo && f._price_hi ? [f._price_lo, f._price_hi] : null;
+    const support: [number, number] | null = model.price_support[goodsType] ?? goodsRange;
     let lo = num(body.priceMin, "최저 판매가", { optional: true, min: 1, max: 1e9 });
     let hi = num(body.priceMax, "최고 판매가", { optional: true, min: 1, max: 1e9 });
+    if (lo === null && hi === null && !support) return bad("이 굿즈 종류는 판매가 범위를 입력하세요 (세부 설정)");
     if (lo === null && hi === null) {
-      [lo, hi] = support;
+      [lo, hi] = support!;
     } else {
       lo = lo ?? hi!;
       hi = hi ?? lo;
@@ -91,6 +91,7 @@ export async function POST(req: Request) {
       asOf: ctx.asOf,
       idolSnapshotDate: ctx.features.idol_snapshot_date ?? null,
       level: result.level,
+      knownType: result.knownType,
       best: result.best,
       rows: result.rows,
       basis,

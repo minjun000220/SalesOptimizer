@@ -106,3 +106,22 @@ def kream_proxy_records(session: Session, tagger, start: date, end: date, window
     out["channel"] = "kream"
     out["source"] = "proxy"
     return out.drop(columns=["listing_id", "window", "days"]).reset_index(drop=True)
+
+
+def goods_price_stats(session: Session, as_of: date, days: int = 90, min_n: int = 5) -> pd.DataFrame:
+    """굿즈 종류별 판매가 분포 (최근 days 일, 리셀 제외): 보통 가격(중앙값)과 10~90% 범위.
+    판매 기록이 없는 종류를 계산할 때 기준 가격·검토할 가격 범위로 쓴다. index=goods_type."""
+    if not (_has(session, "listing") and _has(session, "listing_snapshot")):
+        return pd.DataFrame()
+    end = datetime.combine(as_of + timedelta(days=1), time.min)
+    rows = session.execute(text(
+        "SELECT l.goods_type, s.price FROM listing l JOIN listing_snapshot s ON s.listing_id = l.id "
+        "WHERE l.goods_type IS NOT NULL AND s.price > 0 AND COALESCE(l.seller_type, 'retail') <> 'resale' "
+        "AND s.observed_at >= :a AND s.observed_at < :b"),
+        {"a": end - timedelta(days=days), "b": end}).all()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows, columns=["goods_type", "price"])
+    g = df.groupby("goods_type").price
+    out = pd.DataFrame({"n": g.size(), "ref": g.median(), "lo": g.quantile(0.1), "hi": g.quantile(0.9)})
+    return out[out.n >= min_n]

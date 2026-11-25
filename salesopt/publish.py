@@ -54,25 +54,43 @@ def export_model(pred, kind: str, meta: dict | None = None, conformal_level: flo
     }
 
 
-def _encode(model: dict, features: dict, goods_type: str) -> tuple[np.ndarray, int]:
+def _encode(model: dict, features: dict, goods_type: str) -> tuple[np.ndarray, int | None]:
+    """특징 인코딩. 학습하지 않은 굿즈 종류면 원-핫을 0 으로 두고 g=None (member_params 가 평균 종류로 처리)."""
     vals = np.array([np.nan if features.get(f) is None else float(features[f]) for f in model["numeric"]])
     num = np.nan_to_num((vals - np.array(model["mean"])) / np.array(model["std"]), nan=0.0)
     cats = model["categories"]
-    if goods_type not in cats:
-        raise KeyError(goods_type)
-    g = cats.index(goods_type)
     onehot = np.zeros(len(cats) - 1)
-    if g > 0:
+    g = cats.index(goods_type) if goods_type in cats else None
+    if g:
         onehot[g - 1] = 1.0
     return np.concatenate([num, onehot]), g
 
 
 def member_params(model: dict, features: dict, goods_type: str, price: float) -> tuple[np.ndarray, np.ndarray]:
+    """멤버별 (μ, σ).
+
+    판매 기록이 없는 굿즈 종류 (학습 범주에 없음) → '평균 굿즈 종류' 로 계산:
+      μ = (공통 부분) + 종류 효과들의 평균 − (탄력성 평균) · (log p − log 그 종류의 보통 가격)
+      σ = sqrt(σ_공통² + 종류 효과들의 분산)   ← 어떤 종류와 비슷한지 모르는 만큼 불확실성을 키운다
+    '보통 가격' 은 Goods 가 모은 그 종류 상품 가격의 중앙값 (features['_price_ref']).
+    """
     x, g = _encode(model, features, goods_type)
+    d = len(model["numeric"])
     mu, sg = [], []
     for m in model["members"]:
-        mu.append(m["b0"] + x @ np.array(m["b"]) - m["elasticity"][g] * (math.log(price) - m["lp_center"][g]))
-        sg.append(math.exp(min(max(m["a0"] + x @ np.array(m["a"]), -4.0), 3.0)))
+        b, a = np.array(m["b"]), np.array(m["a"])
+        if g is not None:
+            mu.append(m["b0"] + x @ b - m["elasticity"][g] * (math.log(price) - m["lp_center"][g]))
+            sg.append(math.exp(min(max(m["a0"] + x @ a, -4.0), 3.0)))
+            continue
+        tb = np.concatenate([[0.0], b[d:]])            # 종류 효과 (첫 종류 = 기준 0)
+        ta = np.concatenate([[0.0], a[d:]])
+        ref = features.get("_price_ref")
+        center = math.log(ref) if ref else float(np.mean(m["lp_center"]))
+        e = float(np.mean(m["elasticity"]))
+        mu.append(m["b0"] + x[:d] @ b[:d] + tb.mean() - e * (math.log(price) - center))
+        s0 = math.exp(min(max(m["a0"] + x[:d] @ a[:d] + ta.mean(), -4.0), 3.0))
+        sg.append(math.sqrt(s0 ** 2 + tb.var()))
     return np.array(mu), np.array(sg)
 
 
@@ -130,7 +148,7 @@ def deterministic_recommend(model: dict, features: dict, goods_type: str, prices
         })
     ok = [r for r in rows if r["safe_qty"] > 0 and r["expected_profit"] > 0]
     best = max(ok, key=lambda r: r["expected_profit"]) if ok else None
-    return {"rows": rows, "best": best, "level": level0}
+    return {"rows": rows, "best": best, "level": level0, "known_type": goods_type in model["categories"]}
 
 
 # --------------------------------------------------------------------------- 올리기
@@ -194,6 +212,8 @@ def publish_contexts(session: Session, group_map, goods_types, today: date | Non
     names = dict(session.execute(select(IdolSnapshot.group_key, IdolSnapshot.name)
                                  .order_by(IdolSnapshot.date)).all())
     keys = sorted(set(group_map) | set(names))
+    from salesopt.sources.goods import goods_price_stats
+    prices = goods_price_stats(session, before - timedelta(days=1))
     session.execute(delete(PublishedContext))
     cache: dict = {}
     n = 0
@@ -204,6 +224,10 @@ def publish_contexts(session: Session, group_map, goods_types, today: date | Non
             ctx = build_context(session, g, gt, before, cache).iloc[0]
             feats = {f: (None if pd.isna(ctx[f]) else float(ctx[f])) for f in NUMERIC_FEATURES}
             feats["idol_snapshot_date"] = str(ctx["idol_snapshot_date"]) if ctx["idol_snapshot_date"] else None
+            if gt in prices.index:                    # Goods 가 모은 이 종류의 판매가 분포
+                pr = prices.loc[gt]
+                feats |= {"_price_ref": round(float(pr.ref)), "_price_lo": round(float(pr.lo)),
+                          "_price_hi": round(float(pr.hi)), "_price_n": int(pr.n)}
             session.add(PublishedContext(group_key=k, group_name=names.get(k, k), aliases=aliases, goods_type=gt,
                                          as_of=before - timedelta(days=1), features=feats))
             n += 1
@@ -227,6 +251,8 @@ def publish(session: Session, group_map, alpha: float = 0.1, min_elasticity: flo
     hot = hot_scores(session, date.today())
     if not hot.empty:
         types |= set(hot.index)
+    from salesopt.sources.goods import goods_price_stats
+    types |= set(goods_price_stats(session, date.today()).index)
     for kind in ("real", "demo"):
         m = session.get(PublishedModel, kind)
         if m is not None:

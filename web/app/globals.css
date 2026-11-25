@@ -187,3 +187,4 @@ button.ghost, .filebtn {
 button.mini { margin: 0; padding: 4px 10px; min-height: 30px; font-size: 13px; font-weight: 500; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 button.mini.danger { color: var(--error); }
 code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+.pill.small { font-size: 12px; padding: 2px 8px; vertical-align: middle; margin-left: 6px; font-weight: 500; }

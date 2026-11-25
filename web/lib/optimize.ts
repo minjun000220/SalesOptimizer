@@ -38,7 +38,7 @@ export type Row = {
   newsvendor_sellout_prob: number;
   newsvendor_profit: number;
 };
-export type Result = { rows: Row[]; best: Row | null; level: number };
+export type Result = { rows: Row[]; best: Row | null; level: number; knownType: boolean };
 
 // ------------------------------------------------------------------ 정규분포
 function erfc(x: number): number {
@@ -101,9 +101,9 @@ const ZW = (() => {
   return w.map((v) => v / s);
 })();
 
+/** 특징 인코딩. 학습하지 않은 굿즈 종류면 원-핫을 0 으로 두고 g = -1 (memberParams 가 평균 종류로 처리). */
 export function encode(model: ModelPayload, features: Record<string, number | null | undefined>, goodsType: string) {
   const g = model.categories.indexOf(goodsType);
-  if (g < 0) throw new Error(`학습 데이터에 없는 굿즈 종류: ${goodsType}`);
   const num = model.numeric.map((f, i) => {
     const v = features[f];
     if (v === null || v === undefined || Number.isNaN(v)) return 0; // 빈 값 = 학습 평균
@@ -113,19 +113,43 @@ export function encode(model: ModelPayload, features: Record<string, number | nu
   return { x: [...num, ...onehot], g };
 }
 
-function memberParams(model: ModelPayload, x: number[], g: number, price: number) {
+const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+const variance = (a: number[]) => { const m = avg(a); return avg(a.map((v) => (v - m) ** 2)); };
+
+/**
+ * 판매 기록이 없는 굿즈 종류(g = -1) → '평균 굿즈 종류':
+ *   μ = 공통 부분 + 종류 효과 평균 − 탄력성 평균 × (log p − log 보통 가격)
+ *   σ = sqrt(σ_공통² + 종류 효과의 분산)
+ */
+function memberParams(model: ModelPayload, x: number[], g: number, price: number, priceRef?: number | null) {
   const lp = Math.log(price);
+  const d = model.numeric.length;
   const mu: number[] = [];
   const sg: number[] = [];
   for (const m of model.members) {
+    if (g >= 0) {
+      let dotB = 0;
+      let dotA = 0;
+      for (let i = 0; i < x.length; i++) {
+        dotB += x[i] * m.b[i];
+        dotA += x[i] * m.a[i];
+      }
+      mu.push(m.b0 + dotB - m.elasticity[g] * (lp - m.lp_center[g]));
+      sg.push(Math.exp(Math.min(Math.max(m.a0 + dotA, -4), 3)));
+      continue;
+    }
     let dotB = 0;
     let dotA = 0;
-    for (let i = 0; i < x.length; i++) {
+    for (let i = 0; i < d; i++) {
       dotB += x[i] * m.b[i];
       dotA += x[i] * m.a[i];
     }
-    mu.push(m.b0 + dotB - m.elasticity[g] * (lp - m.lp_center[g]));
-    sg.push(Math.exp(Math.min(Math.max(m.a0 + dotA, -4), 3)));
+    const tb = [0, ...m.b.slice(d)];
+    const ta = [0, ...m.a.slice(d)];
+    const center = priceRef ? Math.log(priceRef) : avg(m.lp_center);
+    mu.push(m.b0 + dotB + avg(tb) - avg(m.elasticity) * (lp - center));
+    const s0 = Math.exp(Math.min(Math.max(m.a0 + dotA + avg(ta), -4), 3));
+    sg.push(Math.sqrt(s0 * s0 + variance(tb)));
   }
   return { mu, sg };
 }
@@ -172,7 +196,7 @@ export function recommend(
   const rows: Row[] = [];
   for (const p of [...new Set(prices)].sort((a, b) => a - b)) {
     if (p <= cost.unit_cost) continue;
-    const { mu, sg } = memberParams(model, x, g, p);
+    const { mu, sg } = memberParams(model, x, g, p, features._price_ref as number | null | undefined);
     const rho = (p - cost.unit_cost) / (p - cost.salvage);
     const lvl = Math.min(level0, rho);
     const zq = normPpf(lvl);
@@ -204,7 +228,7 @@ export function recommend(
   }
   const ok = rows.filter((r) => r.safe_qty > 0 && r.expected_profit > 0);
   const best = ok.length ? ok.reduce((a, b) => (b.expected_profit > a.expected_profit ? b : a)) : null;
-  return { rows, best, level: level0 };
+  return { rows, best, level: level0, knownType: g >= 0 };
 }
 
 /** 검토할 가격 격자: 하한~상한을 대략 40칸, 보기 좋은 간격(100/500/1000원 …)으로. */

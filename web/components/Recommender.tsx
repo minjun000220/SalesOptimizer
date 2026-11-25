@@ -15,6 +15,7 @@ type Answer = {
   asOf: string;
   idolSnapshotDate: string | null;
   level: number;
+  knownType: boolean;
   best: Row | null;
   rows: Row[];
   basis: Basis[];
@@ -136,7 +137,7 @@ export default function Recommender({ groups, goodsTypes, needsPassword }: { gro
         <section className={`result ${busy ? "stale" : ""}`} aria-live="polite">
           <h2>
             {ans.group.name} · {ans.goodsType}{ans.productName ? ` · ${ans.productName}` : ""}
-          </h2>
+           {!ans.knownType && <span className="pill warn small">판매 기록 없는 종류</span>}</h2>
 
           {best ? (
             <>

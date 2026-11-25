@@ -518,6 +518,15 @@ ol.steps li { margin: 3px 0; }
     <li>Python 과 TypeScript 결과가 같은지 테스트로 확인(Python 이 만든 기준값과 비교: 수량 ±1개, 이익 0.1% 이내)</li>
     <li>판매 기록이 20건 미만이면 가짜 데이터로 학습한 예시 모델을 사용 (화면에는 표시하지 않음 — 운영 시 유의)</li>
   </ul>
+  <h3>11.1 판매 기록이 없는 굿즈 종류</h3>
+  <p>Goods 는 굿즈 종류 23개의 유행 점수를 매일 집계하지만, 그것은 "가격에 따라 몇 개 팔렸나"가 아니라 입력 특징(5장)입니다. 판매 기록이 없는 종류는 학습한 종류들의 <b>평균</b>으로 계산합니다.</p>
+  <div class="eq"><span class="eqname">식 (11.4) 평균 굿즈 종류</span>
+  \[ \mu_b=b_0+\tilde x_{\text{num}}^\top b_{\text{num}}+\overline{\delta_b}-\bar e_b\big(\log p-\log p^{\text{ref}}\big),\qquad \sigma_b=\sqrt{\sigma_{b,0}^2+\operatorname{Var}(\delta_b)} \]</div>
+  <ul class="sym">
+    <li>\(\delta_b\): 학습한 종류들의 효과(첫 종류 = 0), \(\overline{\delta_b}\) 와 \(\operatorname{Var}(\delta_b)\) 는 그 평균과 분산. \(\bar e_b\): 탄력성 평균</li>
+    <li>\(p^{\text{ref}}\): Goods 가 최근 90일 모은 그 종류 판매가(리셀 제외)의 중앙값. 기본 가격 범위는 10~90% 분위</li>
+    <li>어떤 종류와 비슷한지 모르는 만큼 \(\sigma\) 를 키우므로 추천 수량이 더 보수적이다. 그 종류의 판매 기록이 들어오면 자동으로 따로 학습된다</li>
+  </ul>
 </section>
 
 <!-- ===================================================================== 12 -->

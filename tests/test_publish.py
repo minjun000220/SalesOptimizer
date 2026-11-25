@@ -47,8 +47,14 @@ def test_missing_features_use_training_mean(trained):
     det_all_none = deterministic_recommend(model, {f: None for f in NUMERIC_FEATURES}, "키링", [12000],
                                            CostSpec(unit_cost=4000), alpha=0.1)
     assert det_all_none["rows"][0]["safe_qty"] > 0
-    with pytest.raises(KeyError):
-        deterministic_recommend(model, {}, "우산", [12000], CostSpec(unit_cost=4000))
+    # 판매 기록에 없는 종류 → 평균 굿즈 종류로 계산 (불확실성이 더 커서 수량이 더 보수적)
+    feats = {f: None for f in NUMERIC_FEATURES}
+    unknown = deterministic_recommend(model, feats | {"_price_ref": 12000}, "우산", [12000], CostSpec(unit_cost=4000))
+    assert unknown["known_type"] is False and unknown["rows"][0]["safe_qty"] >= 0
+    from salesopt.publish import member_params
+    mu_u, sg_u = member_params(model, feats | {"_price_ref": 12000}, "우산", 12000)
+    sg_known = np.mean([member_params(model, feats, t, 10000)[1].mean() for t in model["categories"]])
+    assert sg_u.mean() > sg_known
 
 
 def test_publish_writes_model_and_contexts(session):
@@ -71,10 +77,13 @@ def test_write_vectors_for_typescript(trained):
         ("키링", CostSpec(4000, 500, 300000, 50, None), [9000, 11000, 13000, 15000], 0.1),
         ("응원봉", CostSpec(16000, 0, 0, 1, 900), [40000, 50000], 0.05),
         ("인형", CostSpec(11000, 0, 0, 1, None), [30000], 0.2),
+        ("우산", CostSpec(5000, 0, 100000, 10, None), [12000, 15000, 18000], 0.1),   # 학습하지 않은 종류
     ]:
-        ctx = sim.contexts(1, goods_type=gt)
+        ctx = sim.contexts(1, goods_type=gt if gt in model["categories"] else "키링")
         feats = {f: float(ctx[f].iloc[0]) for f in NUMERIC_FEATURES}
         feats["group_type_buzz_7d"] = None
+        if gt not in model["categories"]:
+            feats["_price_ref"] = 15000
         cases.append({"goods_type": gt, "features": feats, "prices": prices, "alpha": alpha,
                       "cost": {"unit_cost": cost.unit_cost, "salvage": cost.salvage, "fixed_cost": cost.fixed_cost,
                                "moq": cost.moq, "max_qty": cost.max_qty},
