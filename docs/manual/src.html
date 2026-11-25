@@ -78,6 +78,7 @@ ol.steps li { margin: 3px 0; }
     <div><span class="no">11</span>웹 계산기: 같은 식을 즉시 계산하는 방법</div>
     <div><span class="no">12</span>검증: 정답을 아는 시뮬레이션 결과</div>
     <div><span class="no">13</span>운영 구조, 한계와 다음 단계</div>
+    <div><span class="no">14</span>사용한 AI 모델과 학습 방법</div>
     <div><span class="no">부록</span>기호표</div>
   </div>
 </section>
@@ -636,6 +637,110 @@ ol.steps li { margin: 3px 0; }
     <li>IdolSentiments 감성 라벨링·SetFit 학습, 오탐 보정</li>
     <li>기록이 1,000건 이상이면 cVAE 로 전환 (보정과 함께)</li>
   </ol>
+</section>
+
+
+<!-- ===================================================================== 14 -->
+<section class="chapter">
+  <h2>14. 사용한 AI 모델과 학습 방법</h2>
+  <p>세 프로그램에서 쓰는 모델은 모두 11가지입니다. <b>직접 학습시키는 것은 3가지</b>(수요 모델, cVAE, 사전학습 회귀)이고, 나머지는 공개된 학습 완료 모델을 그대로 쓰거나 학습이 필요 없는 규칙·통계 방법입니다. 대형 언어모델(ChatGPT 등)은 프로그램 안에서 쓰지 않습니다.</p>
+
+  <h3>14.1 전체 목록</h3>
+  <table>
+    <tr><th>#</th><th>모델</th><th>위치</th><th>종류</th><th>학습</th><th>현재</th></tr>
+    <tr><td>1</td><td>ko-sroberta-multitask (SBERT)</td><td>IdolSentiments</td><td>문장 임베딩 Transformer</td><td>공개 모델 그대로</td><td>사용</td></tr>
+    <tr><td>2</td><td>앵커 zero-shot 감성 분류</td><td>IdolSentiments</td><td>유사도 기반 분류</td><td>학습 없음 (기준 문장 62개)</td><td>사용</td></tr>
+    <tr><td>3</td><td>관련성 판별</td><td>IdolSentiments</td><td>유사도 기반</td><td>학습 없음 (기준 문장 7개)</td><td>사용</td></tr>
+    <tr><td>4</td><td>도배·복붙 제거</td><td>IdolSentiments</td><td>임베딩 유사도 규칙</td><td>학습 없음</td><td>사용</td></tr>
+    <tr><td>5</td><td>SetFit 감성 분류기</td><td>IdolSentiments</td><td>SBERT 미세조정 + 로지스틱 회귀</td><td>직접 학습 (라벨 필요)</td><td><b>미사용</b> (라벨 없음)</td></tr>
+    <tr><td>6</td><td>Kiwi 형태소 분석기</td><td>Goods</td><td>한국어 형태소 분석</td><td>공개 모델 그대로</td><td>설치 시 사용</td></tr>
+    <tr><td>7</td><td>핫지수·급상승·신규 종류 탐지</td><td>Goods</td><td>통계 점수</td><td>학습 없음 (가중치 사람이 정함)</td><td>사용</td></tr>
+    <tr><td>8</td><td><b>중도절단 로그정규 회귀 앙상블</b></td><td>SalesOptimizer</td><td>확률적 수요 생성모델</td><td><b>직접 학습 (매일)</b></td><td><b>사용 (핵심)</b></td></tr>
+    <tr><td>9</td><td>조건부 VAE (cVAE)</td><td>SalesOptimizer</td><td>딥러닝 생성모델</td><td>직접 학습</td><td>검증에만, 웹 미사용</td></tr>
+    <tr><td>10</td><td><b>양방향 고정효과 회귀</b></td><td>SalesOptimizer</td><td>계량경제 회귀</td><td><b>직접 학습 (1회)</b></td><td>사용 (사전분포)</td></tr>
+    <tr><td>11</td><td>Conformal 보정</td><td>SalesOptimizer</td><td>통계적 보정</td><td>학습 아님 (기록으로 조정)</td><td>기록 9건 이상일 때</td></tr>
+  </table>
+
+  <h3>14.2 ① SBERT 문장 임베딩 (IdolSentiments)</h3>
+  <ul class="sym">
+    <li><b>모델</b>: <code>jhgan/ko-sroberta-multitask</code>. 한국어 RoBERTa 를 한국어 자연어추론(KorNLI)·문장 유사도(KorSTS) 데이터로 학습해 공개한 sentence-transformers 모델</li>
+    <li><b>하는 일</b>: 문장 하나를 768개 숫자(벡터)로 바꾼다. 뜻이 비슷한 문장은 벡터도 가깝다 (코사인 유사도)</li>
+    <li><b>학습</b>: 하지 않는다. 받은 그대로 쓰고(가중치 고정), 길이 1로 정규화한 벡터를 SQLite 에 문장 해시로 캐시해 같은 문장은 다시 계산하지 않는다</li>
+    <li><b>실행</b>: GitHub Actions CPU, 배치 64. 모델 파일은 Actions 캐시에 저장</li>
+  </ul>
+
+  <h3>14.3 ②③④ 앵커 감성·관련성·중복 제거 (IdolSentiments)</h3>
+  <ul class="sym">
+    <li><b>감성</b>: 기준 문장(앵커) 긍정 23개 · 부정 22개 · 중립 17개와의 유사도로 분류 (식 5.1). 감성별로 가장 비슷한 3개의 평균 유사도를 온도 0.05 softmax 로 확률화</li>
+    <li><b>관련성</b>: "아이돌 무대·노래·외모 이야기" 같은 기준 문장 7개와의 최대 유사도를 0~1 로 변환. 그룹·멤버 이름 없이 맥락으로만 연결된 문장의 가중치에 곱한다</li>
+    <li><b>도배 제거</b>: 20자 이상 문장 중 앞 문장과 유사도 0.95 이상이면 제거 (총공 문구·봇 대응)</li>
+    <li><b>학습</b>: 모두 없음. 성능을 올리는 방법은 잘못 분류되는 표현을 기준 문장 파일(<code>config/anchors.yaml</code>)에 추가하는 것</li>
+    <li><b>한계</b>: 라벨로 정확도를 검증한 적이 없다. 현재 공개된 결과는 모두 이 방식</li>
+  </ul>
+
+  <h3>14.4 ⑤ SetFit 감성 분류기 (준비됨, 미사용)</h3>
+  <ol class="steps">
+    <li><b>라벨링</b>: <code>python main.py label 그룹 --n 300</code> — 수집된 문장을 하나씩 보여 주고 1(부정)·2(중립)·3(긍정)을 입력 (유튜브 댓글만)</li>
+    <li><b>분할</b>: 무작위로 섞어 80% 학습 / 20% 검증. 클래스마다 최소 8개 (권장 50~100개)</li>
+    <li><b>1단계 — 대조학습</b>: 같은 감성 문장 쌍은 가깝게, 다른 감성 쌍은 멀게 SBERT 를 미세조정 (문장당 20쌍, 1 에폭, 배치 16)</li>
+    <li><b>2단계 — 분류 헤드</b>: 미세조정된 벡터 위에 로지스틱 회귀 학습</li>
+    <li><b>평가</b>: 검증 20%에서 macro-F1 을 앵커 방식과 비교해 출력. 저장(<code>models/setfit-sentiment</code>)하면 다음 분석부터 자동 사용</li>
+  </ol>
+  <p class="muted">라벨이 아직 없어 학습한 적이 없다. 감성 정확도를 높이는 가장 확실한 다음 단계.</p>
+
+  <h3>14.5 ⑥⑦ Goods 의 모델</h3>
+  <ul class="sym">
+    <li><b>Kiwi</b>(kiwipiepy): 공개 한국어 형태소 분석기. 굿즈 종류를 판별하지 못한 상품명·글에서 명사를 뽑아, 최근 갑자기 많이 나온 단어를 "사전에 없는 새 굿즈 종류 후보"로 보여 준다. 설치되어 있지 않으면 정규식으로 대신한다</li>
+    <li><b>굿즈 종류 판별</b>: 사전(별칭 목록) 매칭. 긴 별칭 우선, 영문은 단어 경계 확인. 학습 없음</li>
+    <li><b>핫지수</b>: 식 (5.9)~(5.11). 신호 가중치는 사람이 정한 값이다 (나중에 "실제로 유행한 종류" 라벨로 학습해 바꿀 수 있게 설계)</li>
+    <li><b>급상승 탐지</b>: 최근 3일 일평균 언급을 7일 이전 기준 기간과 비교한 표준점수 \(z=(\bar r-\bar b)/(\max(\text{sd},\sqrt{\bar b},1)/\sqrt3)\), \(z\ge3\) 이면 급상승 (포아송 하한)</li>
+  </ul>
+
+  <h3>14.6 ⑧ 수요 모델: 중도절단 로그정규 앙상블 (핵심, 매일 학습)</h3>
+  <ol class="steps">
+    <li><b>데이터 모으기</b>: 판매 기록(<code>so_sales_record</code>, 출처 real)을 읽고, 기록마다 판매 시작일 이전의 그룹·굿즈 점수 10개를 붙인다. 값이 있는 비율이 50% 미만인 특징은 뺀다</li>
+    <li><b>학습 조건</b>: 실제 기록 20건 이상이면 실제 모델, 아니면 예시 모델(아래)을 쓴다</li>
+    <li><b>보정용 분리</b>: 기록의 30%가 9건 이상이면 무작위로 떼어 conformal 보정용으로 둔다. 나머지 70%로 학습</li>
+    <li><b>표준화</b>: 특징을 학습 데이터 평균·표준편차로 표준화, 굿즈 종류는 원-핫</li>
+    <li><b>부트스트랩 10회</b>: 학습 기록에서 같은 수만큼 복원추출한 데이터 10세트를 만든다 (모델 10개)</li>
+    <li><b>릿지 강도 고르기 (모델마다)</b>: \(\lambda\in\{0.3,1,3,10,30,100\}\) 각각 5겹 교차검증 — 4/5 로 학습, 1/5 의 중도절단 로그우도 합 계산 → 가장 큰 \(\lambda\). (6 × 5 = 30번 학습)</li>
+    <li><b>초깃값</b>: 완판되지 않은 기록으로 최소제곱 회귀를 해서 시작점으로 쓴다</li>
+    <li><b>최적화</b>: 식 (6.4) 목적함수를 L-BFGS-B(준뉴턴법)로 최소화, 해석적 기울기(식 6.3), 최대 2,000회 반복. 가격 탄력성에는 사전분포 \(N(1.276,\,0.921^2)\)</li>
+    <li><b>보정</b>: 떼어 둔 기록으로 분위수 수준 \(a^\star\) 계산 (9장)</li>
+    <li><b>저장</b>: 모델 10개의 파라미터(\(b_0,b,a_0,a,e_g,\bar\ell_g\)), 인코더, \(a^\star\), 종류별 가격 범위를 JSON 으로 Supabase <code>so_model</code> 에 저장. 웹이 읽어 계산</li>
+  </ol>
+  <ul class="sym">
+    <li><b>실행</b>: 매일 06:43 GitHub Actions (CPU, 수 분). 파라미터 수 = \(2(d+1)+G\) (특징 \(d\)개, 굿즈 종류 \(G\)개) — 수십 개 수준이라 기록 수십 건으로도 학습 가능</li>
+    <li><b>예시 모델</b>: 실제 기록이 없을 때 쓰는 모델. 12장의 시뮬레이션으로 만든 가짜 기록 1,500건으로 같은 절차를 거쳐 한 번 학습. 숫자는 실제 판단에 쓰면 안 된다</li>
+  </ul>
+
+  <h3>14.7 ⑨ 조건부 VAE (검증에만 사용)</h3>
+  <ol class="steps">
+    <li><b>입력 표준화</b>: 로그 가격과 \(y=\log(1+\text{판매량})\) 를 평균 0, 표준편차 1 로</li>
+    <li><b>구조</b>: 인코더 \((x,\ell,y,\text{완판})\to\) 잠재 2차원의 평균·로그분산, 디코더 \((x,\ell,z)\to(\mu,\log\sigma)\). 둘 다 은닉 64 × 2층, SiLU</li>
+    <li><b>손실</b>: 중도절단 재구성 우도 + KL + 단조성 벌점 (식 7.2)</li>
+    <li><b>최적화</b>: Adam, 학습률 0.002, 가중치 감쇠 \(10^{-4}\), 배치 256, 400 에폭. 시드 고정, 앙상블 5개(부트스트랩)</li>
+  </ol>
+  <p class="muted">시뮬레이션 2,000건에서 보정 없이는 아래 꼬리를 낙관(완판 확률 0.82)해 웹에는 쓰지 않는다. 기록이 1,000건 이상 쌓이면 보정과 함께 쓰는 것을 검토.</p>
+
+  <h3>14.8 ⑩ 사전학습 회귀 (1회 학습)</h3>
+  <ol class="steps">
+    <li><b>데이터 받기</b>: Kaggle Food Demand Forecasting (API 키), UCI Online Retail II (공개 다운로드). 원본은 저장소에 넣지 않는다</li>
+    <li><b>정리</b>: Food — 메뉴×지점×주, 결제가, 홍보 여부. Retail — 취소·반품·비상품 코드 제거, 상품×주 판매 수량, 소매 단위(12개 이하) 거래의 최빈 가격</li>
+    <li><b>추정</b>: 상품 평균과 주 평균을 번갈아 빼서(최대 200회, 변화 \(10^{-9}\) 미만이면 멈춤) 고정효과 제거 → 최소제곱 → 상품 단위 군집 표준오차 (식 10.1)</li>
+    <li><b>퍼짐</b>: 상품별 기울기의 분산 − 측정 잡음 (식 10.2)</li>
+    <li><b>결합·저장</b>: 식 (10.3) → <code>config/prior.json</code>. 명령: <code>python -m salesopt pretrain --food … --retail …</code></li>
+  </ol>
+
+  <h3>14.9 학습과 검증에 쓴 데이터 요약</h3>
+  <table>
+    <tr><th>데이터</th><th>용도</th><th class="n">규모</th></tr>
+    <tr><td>유튜브 댓글 · 디시 글</td><td>그룹 점수 (학습 아님, 분석)</td><td class="n">그룹당 수만 건</td></tr>
+    <tr><td>Goods 수집 (애니메이트·KREAM·디시)</td><td>굿즈 점수, 굿즈 종류별 가격 분포</td><td class="n">매일</td></tr>
+    <tr><td>실제 판매 기록</td><td>수요 모델 학습 · 보정</td><td class="n">현재 0건 (20건부터 사용)</td></tr>
+    <tr><td>시뮬레이션 가짜 기록</td><td>예시 모델, 검증 (12장)</td><td class="n">예시 1,500건 · 검증 50~2,000건</td></tr>
+    <tr><td>Food Demand + Online Retail II</td><td>가격 탄력성 사전분포</td><td class="n">63만 관측</td></tr>
+  </table>
 </section>
 
 <!-- ===================================================================== 부록 -->
