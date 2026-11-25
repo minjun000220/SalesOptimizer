@@ -391,5 +391,9 @@ def publish(session: Session, group_map, alpha: float = 0.1, min_elasticity: flo
         if m is not None:
             types |= set(m.payload["categories"])
     out["contexts"] = publish_contexts(session, group_map, sorted(types))
+    prices = goods_price_stats(session, date.today())          # 굿즈 종류별 가격 자료 출처 요약 (로그 확인용)
+    src = prices["source"].value_counts().to_dict() if not prices.empty else {}
+    out["price_data"] = {"판매가": src.get("retail", 0), "KREAM 환산": src.get("resale", 0),
+                         "없음(원가 기준)": len(types) - len(prices)}
     session.flush()
     return out
