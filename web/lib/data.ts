@@ -23,7 +23,8 @@ export async function getOptions(): Promise<Options> {
       select kind, trained_at, payload->'meta' as meta, payload->'categories' as categories from so_model`;
     return {
       groups: groups.map((g) => ({ ...g, aliases: g.aliases ?? [] })).sort((a, b) => a.name.localeCompare(b.name, "ko")),
-      goodsTypes: types.map((t) => t.t),
+      // 모델이 학습한 굿즈 종류만 (Goods 에는 있지만 판매 기록에 없는 종류는 계산할 수 없음)
+      goodsTypes: types.map((t) => t.t).filter((t) => models.some((m) => (m.categories ?? []).includes(t))),
       models: models.map((m) => ({ kind: m.kind, trainedAt: new Date(m.trained_at).toISOString(), meta: m.meta ?? {}, categories: m.categories ?? [] })),
       problem: groups.length ? null : NOT_READY,
     };
