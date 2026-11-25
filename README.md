@@ -94,14 +94,19 @@ python -m salesopt recommend --group 아일릿 --sales sales.csv           # 종
 - 웹은 Python 을 돌리지 않습니다. 매일 학습한 모델의 파라미터만 읽어서 바로 계산합니다(대기 없음).
 - 계산 결과는 Python 과 같습니다. `web/lib/optimize.test.ts` 가 `tests/test_publish.py` 에서 만든 값과 비교합니다.
 - 실제 판매 기록이 20건 미만이면 **가짜 데이터로 학습한 예시 모델**로 계산하고, 화면에 경고를 크게 표시합니다.
-- 실제 판매 기록은 `python -m salesopt import-sales --sales 판매기록.csv` 로 DB 에 넣습니다. 다음 날 publish 때 실제 모델로 바뀌고, 바로 바꾸려면 Actions 를 직접 실행합니다.
+- 실제 판매 기록은 웹의 **판매 기록** 페이지(`/sales`)에서 넣습니다.
+  - 한 줄씩 입력하거나 CSV 를 올립니다. 엑셀 기본 CSV(CP949)도 되고, 열 이름은 한글·영문 모두 됩니다.
+  - 저장된 기록은 표로 보고 고치거나 지울 수 있습니다.
+  - `ACCESS_PASSWORD` 가 설정돼 있어야 쓸 수 있고, 그 비밀번호를 아는 사람만 씁니다.
+  - 명령줄로 넣으려면 `python -m salesopt import-sales --sales 판매기록.csv` 를 씁니다.
+- 판매 기록은 다음 날 publish 때 모델에 반영됩니다. 바로 반영하려면 Actions 를 직접 실행합니다.
 
 ### Vercel 배포
 1. vercel.com → **Add New → Project** → `SalesOptimizer` 저장소 Import
 2. **Root Directory** 를 `web` 으로 지정합니다 (Framework 는 Next.js 로 자동 인식)
 3. **Environment Variables**:
    - `DATABASE_URL`: Goods 와 같은 Supabase Session pooler 주소 (GitHub Secrets 에 넣은 것과 같은 값)
-   - `ACCESS_PASSWORD` (선택): 넣으면 비밀번호를 아는 사람만 계산할 수 있습니다
+   - `ACCESS_PASSWORD`: 판매 기록 페이지를 쓰려면 꼭 넣어야 합니다. 넣으면 계산기도 이 비밀번호를 아는 사람만 쓸 수 있습니다
 4. **Deploy** → 나온 주소를 폰·컴퓨터에서 엽니다
 
 배포 전에 GitHub Actions 의 "아이돌 점수 저장 + 웹 데이터 갱신" 을 한 번 실행해야 화면에 그룹 목록이 나옵니다.

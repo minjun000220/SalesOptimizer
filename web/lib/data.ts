@@ -7,7 +7,7 @@ export type ModelInfo = { kind: "real" | "demo"; trainedAt: string; meta: Record
 export type Options = { groups: GroupOption[]; goodsTypes: string[]; models: ModelInfo[]; problem: string | null };
 export type Context = { groupKey: string; groupName: string; goodsType: string; asOf: string; features: Record<string, number | null> & { idol_snapshot_date?: string | null } };
 
-const NOT_READY = "아직 데이터가 없습니다. GitHub Actions 의 '아이돌 점수 저장 + 웹 데이터 갱신' 을 한 번 실행하세요.";
+const NOT_READY = "데이터가 없습니다.";
 
 function missingTable(e: unknown) {
   return (e as { code?: string })?.code === "42P01";
@@ -60,4 +60,17 @@ export async function getContext(group: string, goodsType: string): Promise<Cont
     asOf: r.as_of,
     features: r.features,
   };
+}
+
+/** 판매 기록 입력용: 계산 가능 여부와 상관없이 알려진 굿즈 종류 전부 (새 종류는 직접 입력 가능). */
+export async function getAllGoodsTypes(): Promise<string[]> {
+  try {
+    const rows = await sql<{ t: string }[]>`
+      select distinct goods_type as t from so_context
+      union select distinct goods_type from so_sales_record order by 1`;
+    return rows.map((r) => r.t);
+  } catch (e) {
+    if (missingTable(e)) return [];
+    throw e;
+  }
 }

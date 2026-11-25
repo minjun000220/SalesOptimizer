@@ -11,7 +11,6 @@ type Answer = {
   goodsType: string;
   productName: string;
   target: number;
-  isDemo: boolean;
   model: { kind: string; meta: Record<string, unknown>; members: number };
   asOf: string;
   idolSnapshotDate: string | null;
@@ -19,8 +18,6 @@ type Answer = {
   best: Row | null;
   rows: Row[];
   basis: Basis[];
-  missing: string[];
-  notes: string[];
 };
 
 const won = (v: number) => `${Math.round(v).toLocaleString("ko-KR")}원`;
@@ -103,7 +100,7 @@ export default function Recommender({ groups, goodsTypes, needsPassword }: { gro
             </select>
           </label>
           <label>
-            <span>상품명 <em>(선택)</em></span>
+            <span>상품명</span>
             <input value={form.productName} onChange={set("productName")} placeholder="예) 아크릴 키링 시즌2" maxLength={80} />
           </label>
           <label>
@@ -120,12 +117,12 @@ export default function Recommender({ groups, goodsTypes, needsPassword }: { gro
                 {["80", "85", "90", "95", "98"].map((v) => <option key={v} value={v}>{v}%</option>)}
               </select>
             </label>
-            <label><span>최저 판매가 (원)</span><input inputMode="numeric" value={form.priceMin} onChange={set("priceMin")} placeholder="비우면 자동" /></label>
-            <label><span>최고 판매가 (원)</span><input inputMode="numeric" value={form.priceMax} onChange={set("priceMax")} placeholder="비우면 자동" /></label>
-            <label><span>1회 고정비 (원)</span><input inputMode="numeric" value={form.fixedCost} onChange={set("fixedCost")} placeholder="디자인·금형 등, 기본 0" /></label>
-            <label><span>최소 생산 수량</span><input inputMode="numeric" value={form.moq} onChange={set("moq")} placeholder="기본 1" /></label>
+            <label><span>최저 판매가 (원)</span><input inputMode="numeric" value={form.priceMin} onChange={set("priceMin")} placeholder="자동" /></label>
+            <label><span>최고 판매가 (원)</span><input inputMode="numeric" value={form.priceMax} onChange={set("priceMax")} placeholder="자동" /></label>
+            <label><span>1회 고정비 (원)</span><input inputMode="numeric" value={form.fixedCost} onChange={set("fixedCost")} placeholder="0" /></label>
+            <label><span>최소 생산 수량</span><input inputMode="numeric" value={form.moq} onChange={set("moq")} placeholder="1" /></label>
             <label><span>최대 생산 수량</span><input inputMode="numeric" value={form.maxQty} onChange={set("maxQty")} placeholder="제한 없음" /></label>
-            <label><span>남은 재고 처분가 (원)</span><input inputMode="numeric" value={form.salvage} onChange={set("salvage")} placeholder="기본 0" /></label>
+            <label><span>남은 재고 처분가 (원)</span><input inputMode="numeric" value={form.salvage} onChange={set("salvage")} placeholder="0" /></label>
           </div>
         </details>
         {needsPassword && (
@@ -137,12 +134,6 @@ export default function Recommender({ groups, goodsTypes, needsPassword }: { gro
 
       {ans && (
         <section className={`result ${busy ? "stale" : ""}`} aria-live="polite">
-          {ans.isDemo && (
-            <div className="banner">
-              ⚠ <b>예시 결과입니다.</b> 실제 판매 기록이 아직 없어서 <b>가짜 데이터</b>로 학습한 모델로 계산했습니다.
-              실제 판단에 쓰지 마세요. 판매 기록이 20건 이상 쌓이면 실제 모델로 바뀝니다.
-            </div>
-          )}
           <h2>
             {ans.group.name} · {ans.goodsType}{ans.productName ? ` · ${ans.productName}` : ""}
           </h2>
@@ -153,25 +144,18 @@ export default function Recommender({ groups, goodsTypes, needsPassword }: { gro
                 <div className="tile hero"><span>적정 판매가</span><b>{won(best.price)}</b></div>
                 <div className="tile hero"><span>추천 생산 수량</span><b>{qty(best.safe_qty)}</b></div>
                 <div className="tile"><span>예상 판매량 (수요)</span><b>{qty(best.demand_p50)}</b><small>대략 {qty(best.demand_p10)} ~ {qty(best.demand_p90)}</small></div>
-                <div className="tile"><span>완판 확률</span><b>{pct(best.sellout_prob)}</b><small>목표 {ans.target}% 이상</small></div>
-                <div className="tile"><span>기대 이익</span><b>{won(best.expected_profit)}</b><small>남는 재고 평균 {qty(best.expected_leftover)}</small></div>
+                <div className="tile"><span>완판 확률</span><b>{pct(best.sellout_prob)}</b></div>
+                <div className="tile"><span>기대 이익</span><b>{won(best.expected_profit)}</b></div>
               </div>
-              <p className="summary">
-                <b>{won(best.price)}</b>에 <b>{qty(best.safe_qty)}</b>를 만들면 약 <b>{pct(best.sellout_prob)}</b> 확률로 모두 팔립니다.
-                이 가격에서 수요는 중앙값 {qty(best.demand_p50)} (10~90% 범위 {qty(best.demand_p10)}~{qty(best.demand_p90)})로 예상됩니다.
-              </p>
-              <p className="compare">
-                참고: 기대 이익만 최대로 하면(원 논문 기준) {qty(best.newsvendor_qty)}를 만들게 되는데, 이때 완판 확률은 {pct(best.newsvendor_sellout_prob)}입니다.
-              </p>
             </>
           ) : (
-            <p className="summary">목표 완판 확률을 지키면서 이익이 나는 가격이 없습니다.</p>
+            <p className="summary">이익이 나는 가격이 없습니다.</p>
           )}
 
           {rows.length > 1 && (
             <div className="charts">
               <LineChart
-                title="판매가별 기대 이익 (추천 수량으로 만들었을 때)"
+                title="판매가별 기대 이익"
                 x={rows.map((r) => r.price)}
                 series={[{ name: "기대 이익", color: "var(--series-1)", values: rows.map((r) => (r.safe_qty > 0 ? r.expected_profit : null)) }]}
                 highlightX={best?.price}
@@ -213,17 +197,11 @@ export default function Recommender({ groups, goodsTypes, needsPassword }: { gro
           </details>
 
           <div className="basis">
-            <h3>계산 근거 <small>({ans.asOf} 기준 · 그룹 점수 {ans.idolSnapshotDate ?? "없음"})</small></h3>
+            <h3>계산 근거 <small>{ans.asOf}</small></h3>
             <ul>
               {ans.basis.map((b) => <li key={b.key}><span>{b.label}</span><b>{fmtBasis(b)}</b></li>)}
             </ul>
-            {ans.missing.length > 0 && <p className="muted">값이 없는 항목({ans.missing.join(", ")})은 평균으로 계산했습니다.</p>}
-            <p className="muted">
-              모델: {ans.isDemo ? "예시(가짜 데이터)" : `실제 판매 기록 ${String(ans.model.meta.n_records ?? "?")}건`} · 앙상블 {ans.model.members}개 ·
-              분위수 수준 {ans.level.toFixed(3)}
-            </p>
           </div>
-          {ans.notes.length > 0 && <ul className="notes">{ans.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
         </section>
       )}
     </>
