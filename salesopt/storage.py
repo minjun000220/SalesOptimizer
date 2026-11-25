@@ -98,7 +98,10 @@ def init_db(url: str | None = None):
     url = normalize_url(url) if url else database_url()
     if url.startswith("sqlite:///") and not url.startswith("sqlite:///:memory:"):
         os.makedirs(os.path.dirname(url.removeprefix("sqlite:///")) or ".", exist_ok=True)
-    _engine = create_engine(url, pool_pre_ping=True)
+    # 매일 한 번 도는 짧은 작업이라 연결을 모아 둘 필요가 없다 → 쓸 때만 1개 열고 바로 닫기
+    # (Supabase 세션 풀러는 동시 연결이 15개뿐이라, Goods·웹과 겹쳐도 한도를 넘지 않게)
+    from sqlalchemy.pool import NullPool
+    _engine = create_engine(url, pool_pre_ping=True, **({"poolclass": NullPool} if url.startswith("postgresql") else {}))
     Base.metadata.create_all(_engine)
     _Session = sessionmaker(_engine, expire_on_commit=False)
     return _engine

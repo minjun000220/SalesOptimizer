@@ -33,9 +33,11 @@ jobs:
       - name: DB 주소 확인
         run: |
           if [ -z "$DATABASE_URL" ]; then echo "::error::DATABASE_URL 시크릿이 없습니다"; exit 1; fi
-      - run: python -m salesopt ingest-idol
+      # DB 동시 연결 한도에 걸리면 1분 뒤 다시 시도 (최대 3번)
+      - name: 아이돌 점수 저장
+        run: for i in 1 2 3; do python -m salesopt ingest-idol && break; [ $i = 3 ] && exit 1; sleep 60; done
       - name: 웹용 모델·특징 올리기
-        run: python -m salesopt publish
+        run: for i in 1 2 3; do python -m salesopt publish && break; [ $i = 3 ] && exit 1; sleep 60; done
 
   test:
     runs-on: ubuntu-latest
