@@ -1,6 +1,6 @@
 import { passwordOk, passwordSet } from "@/lib/auth";
 import { getContext, getModel } from "@/lib/data";
-import { priceGrid, recommend, type Cost } from "@/lib/optimize";
+import { priceGrid, recommend, supports, type Cost, type ModelPayload } from "@/lib/optimize";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +60,25 @@ export async function POST(req: Request) {
     if (ctx === "no-group") return bad(`'${group}' 그룹을 찾지 못했습니다`, 404);
     if (ctx === "no-type") return bad(`'${goodsType}' 은(는) 아직 계산할 수 없는 굿즈 종류입니다`, 422);
 
-    // 실제 판매 기록 모델이 있으면 그것을, 없으면 예시 모델. 판매 기록에 없는 종류는 '평균 굿즈 종류'로 계산
-    const model = (await getModel("real")) ?? (await getModel("demo"));
+    // 수요 모델 선택: auto = 검증 기록으로 자동 선택된 모델 / lognormal = 단순 확률 모델 / cvae = 딥러닝
+    // 실제 판매 기록 모델이 없으면 예시 모델. 딥러닝은 학습한 굿즈 종류만 → 아니면 단순 모델로 계산
+    const choice = ["auto", "lognormal", "cvae"].includes(String(body.model)) ? String(body.model) : "auto";
+    let model: ModelPayload | null;
+    if (choice === "cvae") {
+      model = await getModel("real_cvae");
+      if (!model) return bad("딥러닝 모델은 판매 기록이 100건 이상 쌓여야 학습됩니다", 422);
+    } else if (choice === "lognormal") {
+      model = (await getModel("real_lognormal")) ?? (await getModel("demo"));
+    } else {
+      model = (await getModel("real")) ?? (await getModel("demo"));
+    }
     if (!model) return bad("모델이 아직 없습니다", 503);
+    let fallback = false;
+    if (!supports(model, goodsType)) {
+      model = (await getModel("real_lognormal")) ?? (await getModel("demo"));
+      if (!model) return bad("모델이 아직 없습니다", 503);
+      fallback = true;
+    }
 
     const f = ctx.features as Record<string, number | null | undefined>;
     const goodsRange: [number, number] | null = f._price_lo && f._price_hi ? [f._price_lo, f._price_hi] : null;
@@ -87,7 +103,7 @@ export async function POST(req: Request) {
       goodsType,
       productName: String(body.productName ?? "").slice(0, 80),
       target,
-      model: { kind: model.kind, meta: model.meta, members: model.members.length },
+      model: { kind: model.kind, type: model.model_type ?? "lognormal", meta: model.meta, members: model.members.length, fallback },
       asOf: ctx.asOf,
       idolSnapshotDate: ctx.features.idol_snapshot_date ?? null,
       level: result.level,

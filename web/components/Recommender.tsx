@@ -11,7 +11,7 @@ type Answer = {
   goodsType: string;
   productName: string;
   target: number;
-  model: { kind: string; meta: Record<string, unknown>; members: number };
+  model: { kind: string; type: string; meta: Record<string, unknown>; members: number; fallback: boolean };
   asOf: string;
   idolSnapshotDate: string | null;
   level: number;
@@ -41,10 +41,10 @@ const fmtBasis = (b: Basis) => {
 
 const PW_KEY = "salesopt-pw";
 
-export default function Recommender({ groups, goodsTypes, needsPassword }: { groups: GroupOption[]; goodsTypes: string[]; needsPassword: boolean }) {
+export default function Recommender({ groups, goodsTypes, needsPassword, hasDeep }: { groups: GroupOption[]; goodsTypes: string[]; needsPassword: boolean; hasDeep: boolean }) {
   const [form, setForm] = useState({
     group: groups[0]?.name ?? "", goodsType: goodsTypes.includes("키링") ? "키링" : goodsTypes[0] ?? "", productName: "",
-    unitCost: "", sellout: "90", priceMin: "", priceMax: "", fixedCost: "", moq: "", maxQty: "", salvage: "",
+    unitCost: "", sellout: "90", model: "auto", priceMin: "", priceMax: "", fixedCost: "", moq: "", maxQty: "", salvage: "",
   });
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
@@ -112,6 +112,14 @@ export default function Recommender({ groups, goodsTypes, needsPassword }: { gro
         <details className="more">
           <summary>세부 설정</summary>
           <div className="fields">
+            <label>
+              <span>수요 모델</span>
+              <select value={form.model} onChange={set("model")}>
+                <option value="auto">자동</option>
+                <option value="lognormal">단순 확률 모델</option>
+                {hasDeep && <option value="cvae">딥러닝 (cVAE)</option>}
+              </select>
+            </label>
             <label>
               <span>목표 완판 확률</span>
               <select value={form.sellout} onChange={set("sellout")}>
@@ -198,7 +206,7 @@ export default function Recommender({ groups, goodsTypes, needsPassword }: { gro
           </details>
 
           <div className="basis">
-            <h3>계산 근거 <small>{ans.asOf}</small></h3>
+            <h3>계산 근거 <small>{ans.asOf} · {ans.model.type === "cvae" ? "딥러닝 (cVAE)" : "단순 확률 모델"}{ans.model.fallback ? " (이 종류는 딥러닝 미지원)" : ""}</small></h3>
             <ul>
               {ans.basis.map((b) => <li key={b.key}><span>{b.label}</span><b>{fmtBasis(b)}</b></li>)}
             </ul>

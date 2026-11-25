@@ -13,7 +13,8 @@ export default async function Page() {
       {opts.problem ? (
         <section className="card"><p>{opts.problem}</p></section>
       ) : (
-        <Recommender groups={opts.groups} goodsTypes={opts.goodsTypes} needsPassword={!!process.env.ACCESS_PASSWORD} />
+        <Recommender groups={opts.groups} goodsTypes={opts.goodsTypes} needsPassword={!!process.env.ACCESS_PASSWORD}
+          hasDeep={opts.models.some((m) => m.kind === "real_cvae")} />
       )}
     </main>
   );

@@ -3,7 +3,7 @@ import { sql } from "./db";
 import type { ModelPayload } from "./optimize";
 
 export type GroupOption = { key: string; name: string; aliases: string[] };
-export type ModelInfo = { kind: "real" | "demo"; trainedAt: string; meta: Record<string, unknown>; categories: string[] };
+export type ModelInfo = { kind: string; trainedAt: string; meta: Record<string, unknown>; categories: string[] };
 export type Options = { groups: GroupOption[]; goodsTypes: string[]; models: ModelInfo[]; problem: string | null };
 export type Context = { groupKey: string; groupName: string; goodsType: string; asOf: string; features: Record<string, number | null> & { idol_snapshot_date?: string | null } };
 
@@ -19,7 +19,7 @@ export async function getOptions(): Promise<Options> {
       select distinct on (group_key) group_key as key, group_name as name, aliases
       from so_context order by group_key`;
     const types = await sql<{ t: string }[]>`select distinct goods_type as t from so_context order by 1`;
-    const models = await sql<{ kind: "real" | "demo"; trained_at: Date; meta: Record<string, unknown>; categories: string[] }[]>`
+    const models = await sql<{ kind: string; trained_at: Date; meta: Record<string, unknown>; categories: string[] }[]>`
       select kind, trained_at, payload->'meta' as meta, payload->'categories' as categories from so_model`;
     return {
       groups: groups.map((g) => ({ ...g, aliases: g.aliases ?? [] })).sort((a, b) => a.name.localeCompare(b.name, "ko")),
@@ -34,7 +34,7 @@ export async function getOptions(): Promise<Options> {
   }
 }
 
-export async function getModel(kind: "real" | "demo"): Promise<ModelPayload | null> {
+export async function getModel(kind: string): Promise<ModelPayload | null> {
   const rows = await sql<{ payload: ModelPayload }[]>`select payload from so_model where kind = ${kind}`;
   return rows[0]?.payload ?? null;
 }

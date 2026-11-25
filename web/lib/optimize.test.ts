@@ -34,6 +34,24 @@ test("Python 과 같은 추천", () => {
   }
 });
 
+test("Python 과 같은 추천 (딥러닝 cVAE)", () => {
+  assert.ok(vec.cvae, "test-vectors.json 에 cvae 데이터가 없습니다 (pytest tests/test_publish.py 를 torch 와 함께 실행)");
+  const model = vec.cvae.model as ModelPayload;
+  for (const c of vec.cvae.cases) {
+    const r = recommend(model, c.features, c.goods_type, c.prices, c.cost, c.alpha);
+    r.rows.forEach((row, i) => {
+      const e = c.expected.rows[i];
+      assert.equal(row.price, e.price);
+      close(row.safe_qty, e.safe_qty, 0, 1, `cvae ${c.goods_type} safe_qty @${e.price}`);
+      close(row.expected_profit, e.expected_profit, 1e-3, 50, `cvae ${c.goods_type} profit @${e.price}`);
+      close(row.demand_p50, e.demand_p50, 0, 1, `cvae ${c.goods_type} p50`);
+      close(row.demand_p90, e.demand_p90, 0, 1, `cvae ${c.goods_type} p90`);
+      if (e.sellout_prob !== null) close(row.sellout_prob!, e.sellout_prob, 0, 1e-4, `cvae ${c.goods_type} sellout`);
+    });
+  }
+  assert.throws(() => recommend(model, {}, "우산", [10000], vec.cvae.cases[0].cost));
+});
+
 test("가격 격자", () => {
   const g = priceGrid(9000, 16000);
   assert.equal(g[0], 9000);

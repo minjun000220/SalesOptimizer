@@ -26,7 +26,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[postgres]"
+      - name: 패키지 설치 (딥러닝용 PyTorch 는 CPU 버전)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[postgres]"
       - name: DB 주소 확인
         run: |
           if [ -z "$DATABASE_URL" ]; then echo "::error::DATABASE_URL 시크릿이 없습니다"; exit 1; fi
