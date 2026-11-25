@@ -85,9 +85,9 @@ export async function POST(req: Request) {
     const support: [number, number] | null = model.price_support[goodsType] ?? goodsRange;
     let lo = num(body.priceMin, "최저 판매가", { optional: true, min: 1, max: 1e9 });
     let hi = num(body.priceMax, "최고 판매가", { optional: true, min: 1, max: 1e9 });
-    if (lo === null && hi === null && !support) return bad("이 굿즈 종류는 판매가 범위를 입력하세요 (세부 설정)");
     if (lo === null && hi === null) {
-      [lo, hi] = support!;
+      // 판매 기록도 Goods 가격 자료도 없는 종류 → 원가의 1.5~4배 (굿즈는 보통 원가의 2~3배에 판매)
+      [lo, hi] = support ?? [Math.round(cost.unit_cost * 1.5), Math.round(cost.unit_cost * 4)];
     } else {
       lo = lo ?? hi!;
       hi = hi ?? lo;
@@ -95,7 +95,10 @@ export async function POST(req: Request) {
     }
     if (hi <= cost.unit_cost) return bad("판매가가 원가보다 높아야 합니다");
     const prices = priceGrid(Math.max(lo, cost.unit_cost + 1), hi);
-    const result = recommend(model, ctx.features, goodsType, prices, cost, alpha);
+    // 기록 없는 종류의 기준 가격: Goods 가격 자료가 없으면 검토 범위의 가운데(기하평균)
+    const features = { ...ctx.features } as Record<string, number | null>;
+    if (!model.categories.includes(goodsType) && !features._price_ref) features._price_ref = Math.sqrt(lo * hi);
+    const result = recommend(model, features, goodsType, prices, cost, alpha);
 
     const basis = model.numeric.map((f) => ({ key: f, label: FEATURE_LABELS[f] ?? f, value: ctx.features[f] ?? null }));
     return Response.json({
