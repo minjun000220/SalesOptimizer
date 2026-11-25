@@ -153,7 +153,7 @@ lognormal 모델, 시드 3개 평균, 상황 80개. `profit` = 참 분포를 아
 실제 판매 기록이 쌓이면 그쪽으로 옮겨 가게 했습니다.
 
 ```bash
-python -m salesopt pretrain --food <Food Demand 폴더> --retail <online_retail_ii.csv> [--m5 <M5 폴더>]
+python -m salesopt pretrain --food <Food Demand 폴더> --retail <online_retail_ii.csv>
 # → config/prior.json (학습·publish·recommend 가 자동으로 사용)
 ```
 
@@ -161,7 +161,6 @@ python -m salesopt pretrain --food <Food Demand 폴더> --retail <online_retail_
 |---|---|---|---|
 | [Kaggle Food Demand Forecasting](https://www.kaggle.com/datasets/kannanaikkal/food-demand-forecasting) | 배달 메뉴 × 지점, 145주, 45.6만 관측 (논문이 쓴 데이터) | 1.58 ± 0.02 | 0.88 |
 | [UCI Online Retail II](https://archive.ics.uci.edu/dataset/502/online+retail+ii) | 영국 선물·소품 온라인몰, 상품 × 주, 17.3만 관측 | 0.98 ± 0.02 | 0.75 |
-| [Kaggle M5](https://www.kaggle.com/competitions/m5-forecasting-accuracy) (HOBBIES) | 월마트 취미용품 | (대회 규칙 동의 후 추가 예정) | |
 | **사전분포** | | **1.28 ± 0.92** | |
 
 - 탄력성 1.28은 가격을 10% 올리면 판매량이 약 12% 줄어든다는 뜻입니다.
