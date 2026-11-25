@@ -62,6 +62,8 @@ def run_backtest(n_train: int = 300, n_calib: int = 0, n_test: int = 100, alpha:
     for i in range(n_test):
         ctx = tests.iloc[[i]].reset_index(drop=True)
         gt = ctx.goods_type[0]
+        if gt not in pred.encoder.categories_:     # 학습 기록에 없는 종류는 추천하지 않음 (웹과 같음)
+            continue
         cost, grid = default_cost(gt), price_grid(gt)
         rec = recommend(pred, ctx, grid, cost, alpha=alpha, conservative=conservative, m=m,
                         conformal=conf, seed=seed + 100 + i)

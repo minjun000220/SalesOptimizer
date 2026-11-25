@@ -1,0 +1,101 @@
+{
+  "elasticity_mean": 1.276,
+  "elasticity_sd": 0.9212,
+  "estimates": [
+    {
+      "source": "food",
+      "elasticity": 1.5759839728224452,
+      "se": 0.023557973475790344,
+      "spread": 0.8773456816575531,
+      "resid_sigma": 0.507342904593849,
+      "n_obs": 456467,
+      "n_units": 3577,
+      "by_group": {
+        "Beverages": {
+          "elasticity": 1.329,
+          "se": 0.033,
+          "n_units": 920
+        },
+        "Biryani": {
+          "elasticity": 0.62,
+          "se": 0.082,
+          "n_units": 226
+        },
+        "Desert": {
+          "elasticity": 2.034,
+          "se": 0.061,
+          "n_units": 229
+        },
+        "Extras": {
+          "elasticity": 0.317,
+          "se": 0.042,
+          "n_units": 108
+        },
+        "Fish": {
+          "elasticity": 1.352,
+          "se": 0.31,
+          "n_units": 155
+        },
+        "Other Snacks": {
+          "elasticity": 1.98,
+          "se": 0.061,
+          "n_units": 230
+        },
+        "Pasta": {
+          "elasticity": 1.803,
+          "se": 0.058,
+          "n_units": 229
+        },
+        "Pizza": {
+          "elasticity": 2.921,
+          "se": 0.106,
+          "n_units": 231
+        },
+        "Rice Bowl": {
+          "elasticity": 0.754,
+          "se": 0.043,
+          "n_units": 231
+        },
+        "Salad": {
+          "elasticity": 1.897,
+          "se": 0.081,
+          "n_units": 231
+        },
+        "Sandwich": {
+          "elasticity": 1.863,
+          "se": 0.077,
+          "n_units": 231
+        },
+        "Seafood": {
+          "elasticity": 0.789,
+          "se": 0.098,
+          "n_units": 227
+        },
+        "Soup": {
+          "elasticity": -1.2,
+          "se": 0.5,
+          "n_units": 102
+        },
+        "Starters": {
+          "elasticity": 0.724,
+          "se": 0.132,
+          "n_units": 227
+        }
+      },
+      "note": "Kaggle Food Demand Forecasting (배달 메뉴, 주별)"
+    },
+    {
+      "source": "retail",
+      "elasticity": 0.9761028705655269,
+      "se": 0.01876403621903303,
+      "spread": 0.753425259417663,
+      "resid_sigma": 0.944835633558333,
+      "n_obs": 173114,
+      "n_units": 3522,
+      "by_group": {},
+      "note": "UCI Online Retail II (선물·소품, 주별, 소매 단위 가격)"
+    }
+  ],
+  "created_at": "2026-11-25T10:04:15Z",
+  "note": "가격 탄력성 사전분포. 아이돌 굿즈가 아닌 데이터에서 추정했으므로 실제 판매 기록으로 보정된다."
+}

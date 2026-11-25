@@ -168,6 +168,10 @@ def real_model(session: Session, group_map, alpha: float = 0.1, calib_frac: floa
     n_cal = int(len(data) * calib_frac)
     level = None
     kw = {"min_elasticity": min_elasticity} if min_elasticity else {}
+    from salesopt.pretrain import load_prior
+    prior = load_prior()
+    if prior:                                   # 공개 판매 데이터로 만든 가격 탄력성 사전분포
+        kw |= {"elasticity_prior": prior.elasticity_mean, "elasticity_sd": prior.elasticity_sd}
     if n_cal >= min_records(alpha):
         perm = np.random.default_rng(seed).permutation(len(data))
         cal, train = data.iloc[perm[:n_cal]], data.iloc[perm[n_cal:]]
@@ -178,7 +182,8 @@ def real_model(session: Session, group_map, alpha: float = 0.1, calib_frac: floa
         pred = fit_predictor(data, numeric, n_members=10, seed=seed, **kw)
     return export_model(pred, "real", {"n_records": len(data), "n_sold_out": int(data.sold_out.sum()),
                                        "n_calibration": n_cal if level is not None else 0, "alpha": alpha,
-                                       "dropped_features": [f for f in NUMERIC_FEATURES if f not in numeric]},
+                                       "dropped_features": [f for f in NUMERIC_FEATURES if f not in numeric],
+                                       "elasticity_prior": [prior.elasticity_mean, prior.elasticity_sd] if prior else None},
                         conformal_level=level)
 
 

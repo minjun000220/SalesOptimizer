@@ -146,6 +146,30 @@ lognormal 모델, 시드 3개 평균, 상황 80개. `profit` = 참 분포를 아
 
 참고: 시뮬레이션 n=2000에서 cVAE를 보정 없이 쓰면 하위 꼬리를 낙관해 평균 완판 확률이 0.82로 떨어졌다(시드 1개). 그래서 **cVAE는 conformal 보정과 함께** 쓴다(보정 150건 → 0.94).
 
+## 사전학습: 공개 판매 데이터로 가격 반응 배우기
+
+아이돌 굿즈 판매 기록이 적을 때 가장 불확실한 것은 **가격을 올리면 수요가 얼마나 줄어드는지**(가격 탄력성)입니다.
+그래서 가격과 판매량이 함께 있는 공개 데이터로 그 값의 출발점(사전분포)을 먼저 정하고,
+실제 판매 기록이 쌓이면 그쪽으로 옮겨 가게 했습니다.
+
+```bash
+python -m salesopt pretrain --food <Food Demand 폴더> --retail <online_retail_ii.csv> [--m5 <M5 폴더>]
+# → config/prior.json (학습·publish·recommend 가 자동으로 사용)
+```
+
+| 데이터 | 내용 | 가격 탄력성 | 상품 간 퍼짐 |
+|---|---|---|---|
+| [Kaggle Food Demand Forecasting](https://www.kaggle.com/datasets/kannanaikkal/food-demand-forecasting) | 배달 메뉴 × 지점, 145주, 45.6만 관측 (논문이 쓴 데이터) | 1.58 ± 0.02 | 0.88 |
+| [UCI Online Retail II](https://archive.ics.uci.edu/dataset/502/online+retail+ii) | 영국 선물·소품 온라인몰, 상품 × 주, 17.3만 관측 | 0.98 ± 0.02 | 0.75 |
+| [Kaggle M5](https://www.kaggle.com/competitions/m5-forecasting-accuracy) (HOBBIES) | 월마트 취미용품 | (대회 규칙 동의 후 추가 예정) | |
+| **사전분포** | | **1.28 ± 0.92** | |
+
+- 탄력성 1.28은 가격을 10% 올리면 판매량이 약 12% 줄어든다는 뜻입니다.
+- 추정은 상품·주 양방향 고정효과로 했습니다. 같은 상품의 가격이 바뀌었을 때의 판매량 변화만 쓰므로, "원래 잘 팔리는 상품이 비싸다"나 계절 효과가 섞이지 않습니다.
+- Online Retail 은 대량 구매 할인가가 섞이지 않도록 소매 단위(12개 이하) 거래의 가격만 씁니다.
+- 퍼짐(±0.92)을 넓게 잡은 이유는 두 데이터의 추정치가 서로 다르고, 굿즈는 또 다를 수 있기 때문입니다. 그래서 실제 기록이 조금만 쌓여도 그쪽으로 움직입니다.
+- 이 데이터들에서 빌려 오는 것은 **가격 반응뿐**입니다. 아이돌 점수·굿즈 화제성의 효과와 절대 수량은 실제 판매 기록에서 배웁니다.
+
 ## 판매 데이터 (나중에 추가)
 
 `python -m salesopt template` 양식. 필수 열: group, goods_type, price, quantity_made, quantity_sold, sale_start
@@ -163,6 +187,7 @@ salesopt/
   optimize.py       확률 제약 newsvendor (논문 Algorithm 1·2 변형), 비용·MOQ
   inputs.py         명령줄 비용·가격 입력 (전체 / 종류별)
   publish.py        웹용 모델 파라미터·특징 올리기 + 웹과 같은 결정적 추천 계산
+  pretrain.py       공개 판매 데이터로 가격 탄력성 사전분포 추정 (양방향 고정효과)
   conformal.py      분위수 수준 conformal 보정 (중도절단 strict / impute)
   models/           lognormal(중도절단 Tobit, 교차검증 릿지, 탄력성 ≥ 하한), cvae(PyTorch), 앙상블
   simulate.py       정답을 아는 가짜 판매 데이터 (숨은 수요 충격·내생성 옵션)

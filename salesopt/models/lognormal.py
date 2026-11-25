@@ -30,11 +30,14 @@ class LogNormalDemand(DemandModel):
 
     def __init__(self, ridge: float | str = "auto", ridge_sigma: float | None = None,
                  ridge_elasticity: float = 0.5, elasticity_prior: float = 1.0, cv_folds: int = 5,
-                 min_elasticity: float = 0.0):
+                 min_elasticity: float = 0.0, elasticity_sd: float | None = None):
         """min_elasticity: 가격 탄력성 하한 (도메인 지식). 과거 가격이 '잘 팔릴 걸 알고' 매겨진 데이터(내생성)는
         탄력성을 과소추정해 비싼 가격을 낙관하게 된다 → 하한을 두면 그 위험이 줄어든다."""
         self.ridge, self.ridge_sigma, self.ridge_el = ridge, ridge_sigma, ridge_elasticity
         self.min_el = float(min_elasticity)
+        # elasticity_sd 가 있으면: 가격 탄력성 e ~ N(elasticity_prior, elasticity_sd²) 사전분포 (공개 판매 데이터로 추정,
+        # pretrain.py). 기록이 적으면 이 값 근처, 많아지면 데이터 쪽으로 옮겨 간다. 없으면 예전 방식 (θ 공간 릿지).
+        self.el_prior, self.el_sd = float(elasticity_prior), elasticity_sd
         self.th_prior = np.log(np.expm1(max(elasticity_prior - self.min_el, 0.05)))     # softplus⁻¹
         self.cv_folds = cv_folds
 
@@ -108,10 +111,14 @@ class LogNormalDemand(DemandModel):
                 [g_ls.sum()],
                 X.T @ g_ls,
             ])
-            pen = (r_b * (b @ b) + r_s * (a @ a)
-                   + self.ridge_el * ((th - self.th_prior) @ (th - self.th_prior)))
-            gpen = np.concatenate([[0.0], 2 * r_b * b, 2 * self.ridge_el * (th - self.th_prior),
-                                   [0.0], 2 * r_s * a])
+            if self.el_sd:
+                de = e - self.el_prior
+                pen_e, gpen_e = (de @ de) / (2 * self.el_sd ** 2), de / self.el_sd ** 2 * expit(th)
+            else:
+                dt = th - self.th_prior
+                pen_e, gpen_e = self.ridge_el * (dt @ dt), 2 * self.ridge_el * dt
+            pen = r_b * (b @ b) + r_s * (a @ a) + pen_e
+            gpen = np.concatenate([[0.0], 2 * r_b * b, gpen_e, [0.0], 2 * r_s * a])
             return -lik.sum() + pen, grad + gpen          # grad 는 이미 음의 로그우도 기준
 
         # 초기값: 완판 아닌 기록으로 최소제곱

@@ -28,8 +28,17 @@ SHOW_COLS = ["price", "safe_qty", "sellout_prob", "expected_profit", "expected_l
              "demand_p10", "demand_p50", "newsvendor_qty", "newsvendor_sellout_prob"]
 
 
-def _model_kw(a) -> dict:
-    return {"min_elasticity": a.min_elasticity} if a.model == "lognormal" and a.min_elasticity else {}
+def _model_kw(a, use_prior: bool = False) -> dict:
+    """lognormal 옵션. use_prior=True 면 config/prior.json(공개 데이터로 만든 가격 탄력성 사전분포)을 쓴다."""
+    if a.model != "lognormal":
+        return {}
+    kw = {"min_elasticity": a.min_elasticity} if a.min_elasticity else {}
+    if use_prior:
+        from salesopt.pretrain import load_prior
+        p = load_prior()
+        if p:
+            kw |= {"elasticity_prior": p.elasticity_mean, "elasticity_sd": p.elasticity_sd}
+    return kw
 
 
 def _won(v) -> str:
@@ -143,6 +152,30 @@ def cmd_import_sales(a) -> None:
     print(f"판매 기록 추가 {added}건, 갱신 {updated}건 → 전체 {total}건")
 
 
+def cmd_pretrain(a) -> None:
+    """공개 판매 데이터 → 가격 탄력성 사전분포 (config/prior.json)."""
+    from dataclasses import asdict
+
+    from salesopt.pretrain import combine, estimate, prepare_food, prepare_m5, prepare_retail
+    ests = []
+    if a.food:
+        ests.append(estimate(prepare_food(Path(a.food)), "unit", "time", "food", controls=("emailer", "homepage"),
+                             group="category", note="Kaggle Food Demand Forecasting (배달 메뉴, 주별)"))
+    if a.retail:
+        ests.append(estimate(prepare_retail(Path(a.retail)), "unit", "time", "retail",
+                             note="UCI Online Retail II (선물·소품, 주별, 소매 단위 가격)"))
+    if a.m5:
+        ests.append(estimate(prepare_m5(Path(a.m5)), "unit", "time", "m5", group="dept",
+                             note="Kaggle M5 HOBBIES (월마트 취미용품, 주별)"))
+    if not ests:
+        raise SystemExit("--food, --retail, --m5 중 하나 이상 지정하세요")
+    for e in ests:
+        print(f"{e.source:7s} 탄력성 {e.elasticity:.3f} (±{e.se:.3f}) · 상품 간 퍼짐 {e.spread:.3f} · "
+              f"관측 {e.n_obs:,} · 단위 {e.n_units:,}")
+    prior = combine(ests)
+    print(f"→ 사전분포: 탄력성 {prior.elasticity_mean:.3f} ± {prior.elasticity_sd:.3f}   저장: {prior.save()}")
+
+
 def cmd_publish(a) -> None:
     """웹이 쓸 모델(실제/예시)과 그룹×굿즈 특징을 DB 에 올린다 (매일 ingest-idol 다음에 실행)."""
     from salesopt.features import load_group_map
@@ -185,7 +218,7 @@ def cmd_recommend(a) -> None:
             cal, train = None, data
             print(f"  보정용 기록이 부족해 conformal 보정을 하지 않습니다 (α={a.alpha} 이면 보정용 최소 "
                   f"{min_records(a.alpha)}건, 현재 {n_cal}건)")
-        pred = fit_predictor(train, numeric, kind=a.model, n_members=a.members, seed=a.seed, **_model_kw(a))
+        pred = fit_predictor(train, numeric, kind=a.model, n_members=a.members, seed=a.seed, **_model_kw(a, True))
         if cal is not None:
             L = pred.lower_bounds(cal, cal.price.to_numpy(), LEVEL_GRID, seed=a.seed)
             conf = LevelConformal(a.alpha, censored=a.censored).fit(L, cal.quantity_sold, cal.sold_out)
@@ -256,6 +289,11 @@ def main(argv=None) -> None:
     i = sub.add_parser("ingest-idol"); i.add_argument("--source", default="", help="URL 또는 로컬 폴더")
 
     im = sub.add_parser("import-sales"); im.add_argument("--sales", required=True)
+    pt = sub.add_parser("pretrain", help="공개 판매 데이터로 가격 탄력성 사전분포 만들기")
+    pt.add_argument("--food", default="", help="Food Demand Forecasting 폴더 (train.csv, meal_info.csv)")
+    pt.add_argument("--retail", default="", help="Online Retail II CSV")
+    pt.add_argument("--m5", default="", help="M5 폴더 (sales_train_*.csv, calendar.csv, sell_prices.csv)")
+
     pb = sub.add_parser("publish")
     pb.add_argument("--alpha", type=float, default=0.1)
     pb.add_argument("--min-elasticity", type=float, default=0.0)
@@ -275,7 +313,8 @@ def main(argv=None) -> None:
 
     a = p.parse_args(argv)
     {"demo": cmd_demo, "backtest": cmd_backtest, "template": cmd_template, "ingest-idol": cmd_ingest_idol,
-     "recommend": cmd_recommend, "import-sales": cmd_import_sales, "publish": cmd_publish}[a.cmd](a)
+     "recommend": cmd_recommend, "import-sales": cmd_import_sales, "publish": cmd_publish,
+     "pretrain": cmd_pretrain}[a.cmd](a)
 
 
 if __name__ == "__main__":
